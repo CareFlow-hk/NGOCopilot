@@ -60,6 +60,14 @@ is omitted, any readable absolute path outside NGOPilotMCP's private job tree is
 accepted. Provider credentials and endpoints are inherited from the configured
 server environment and are not MCP tool arguments.
 
+The CareFlow adapters reuse the agent's `OPENROUTER_API_KEY`. Text reasoning
+uses `GOOSE_MODEL`, while image recognition first requests
+`CAREFLOW_VISION_MODEL` (default `openai/gpt-4.1-mini`) and falls back to
+`GOOSE_MODEL` through OpenRouter if the GPT route is unavailable. No
+CareFlow-specific LLM key is required. Voice transcription remains on
+CareFlow's unchanged DashScope `fun-asr` path and uses `DASHSCOPE_API_KEY` when
+configured.
+
 Run `ngopilot-mcp list-tools` to inspect the installed tool names, operations,
 worker assignments, and routing descriptions.
 

@@ -42,6 +42,7 @@ def test_tenant_environment_is_isolated_and_uses_shared_runtimes(settings) -> No
     assert (workflow / "runtimes" / "rostercopiilot" / ".venv").is_symlink()
     assert (workflow / "app-data" / "careflow" / "templates" / "seed.txt").is_file()
     assert env["GOOSE_PATH_ROOT"] == str(tenant / "goose")
+    assert env["CAREFLOW_VISION_MODEL"] == "openai/gpt-4.1-mini"
     assert env["NGOPILOT_MCP_STATE_DIR"] == str(workflow)
     assert env["NGOPILOT_MCP_ALLOWED_INPUT_ROOTS"] == str(tenant / "uploads")
 
@@ -49,8 +50,7 @@ def test_tenant_environment_is_isolated_and_uses_shared_runtimes(settings) -> No
     assert config["GOOSE_MODEL"] == "moonshotai/kimi-k2.6"
     assert config["extensions"]["ngopilot"]["cmd"] == "ngopilot-mcp"
     assert all(
-        config["extensions"][name] == {"enabled": False}
-        for name in DISABLED_CLOUD_EXTENSIONS
+        config["extensions"][name] == {"enabled": False} for name in DISABLED_CLOUD_EXTENSIONS
     )
     assert settings.openrouter_api_key not in json.dumps(config)
 
@@ -80,4 +80,25 @@ async def test_release_stops_disconnected_tenant_immediately(settings) -> None:
     await manager.release(user_id)
 
     manager._stop.assert_awaited_once_with(managed)
+    assert user_id not in manager._processes
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_stops_active_tenant_immediately(settings) -> None:
+    manager = TenantProcessManager(settings)
+    user_id = uuid4()
+    managed = ManagedProcess(
+        user_id=user_id,
+        process=SimpleNamespace(returncode=None),
+        port=1234,
+        secret="secret",
+        tenant_root=manager.tenant_root(user_id),
+        refs=2,
+    )
+    manager._processes[user_id] = managed
+    manager._stop = AsyncMock()
+
+    await manager.checkpoint(user_id)
+
+    manager._stop.assert_awaited_once_with(managed, strict_cache=True)
     assert user_id not in manager._processes

@@ -13,8 +13,22 @@ from typing import Any
 
 
 def _native_bindings() -> SimpleNamespace:
-    from app.api.volunteer import BatchOut, _record_to_out
     from app.config import settings
+    from app.llm import client as careflow_llm_client
+
+    from ngopilot_mcp.workers.careflow_llm_adapter import (
+        install_careflow_llm_adapter,
+    )
+
+    llm_adapter = install_careflow_llm_adapter(settings, careflow_llm_client)
+
+    # Import CareFlow consumers only after the client module is adapted; they
+    # copy the factory functions into module globals during import.
+    from app.llm import text, vision
+
+    llm_adapter.bind(text, vision)
+
+    from app.api.volunteer import BatchOut, _record_to_out
     from app.db import engine, init_db
     from app.models import BatchStatus, VolunteerBatch, VolunteerRecord
     from app.services import excel_export, volunteer_form
@@ -32,6 +46,7 @@ def _native_bindings() -> SimpleNamespace:
         VolunteerBatch=VolunteerBatch,
         VolunteerRecord=VolunteerRecord,
         excel_export=excel_export,
+        llm_adapter=llm_adapter,
         volunteer_form=volunteer_form,
     )
 

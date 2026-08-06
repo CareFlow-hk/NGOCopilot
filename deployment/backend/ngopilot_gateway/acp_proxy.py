@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,10 @@ MAX_ACP_MESSAGE_BYTES = 64 * 1024 * 1024
 MAX_BROWSER_MESSAGE_BYTES = 1024 * 1024
 TENANT_CWD_METHODS = {"session/new", "session/load"}
 UPDATE_CWD_METHOD = "_goose/unstable/session/working-dir/update"
+
+
+class SessionDeletionError(RuntimeError):
+    pass
 
 
 def isolate_client_request(message: dict[str, Any], tenant_root: Path) -> dict[str, Any]:
@@ -123,10 +128,18 @@ class PendingRequest:
 
 
 class AcpRecorder:
-    def __init__(self, db: Database, settings: Settings, user_id: UUID):
+    def __init__(
+        self,
+        db: Database,
+        settings: Settings,
+        user_id: UUID,
+        *,
+        delete_session: Callable[[UUID, str], Awaitable[None]] | None = None,
+    ):
         self.db = db
         self.settings = settings
         self.user_id = user_id
+        self.delete_session = delete_session or db.delete_chat_session
         self.pending: dict[str, PendingRequest] = {}
 
     async def client_message(self, message: dict[str, Any]) -> None:
@@ -232,7 +245,13 @@ class AcpRecorder:
             elif pending.method == "_goose/unstable/session/unarchive":
                 await self.db.archive_chat_session(self.user_id, pending.session_id, False)
             elif pending.method == "session/delete":
-                await self.db.delete_chat_session(self.user_id, pending.session_id)
+                try:
+                    await self.delete_session(self.user_id, pending.session_id)
+                except Exception as error:
+                    raise SessionDeletionError(
+                        "Cloud session cleanup did not complete"
+                    ) from error
+                return
         await self._record_jobs(pending.session_id or session_id_from(result), message)
 
     async def _record_jobs(self, session_id: str | None, value: Any) -> None:
@@ -251,7 +270,12 @@ async def proxy_websocket(
     storage: StorageService,
 ) -> None:
     managed = await processes.acquire(user_id)
-    recorder = AcpRecorder(db, settings, user_id)
+    recorder = AcpRecorder(
+        db,
+        settings,
+        user_id,
+        delete_session=websocket.app.state.session_deletion.delete,
+    )
     try:
         async with connect(
             managed.websocket_url,
@@ -275,7 +299,11 @@ async def proxy_websocket(
                     message = isolate_client_request(message, managed.tenant_root)
                     try:
                         await recorder.client_message(message)
-                        rewritten = await storage.resolve_payload(user_id, message)
+                        rewritten = await storage.resolve_payload(
+                            user_id,
+                            message,
+                            agent_session_id=session_id_from(message.get("params")),
+                        )
                     except PlaceholderError as error:
                         if "id" in message:
                             await websocket.send_json(
@@ -319,6 +347,20 @@ async def proxy_websocket(
                         )
                     try:
                         await recorder.agent_message(message)
+                    except SessionDeletionError:
+                        logger.exception("Failed to delete cloud session data for user %s", user_id)
+                        if "id" in message:
+                            browser_raw = json.dumps(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": message["id"],
+                                    "error": {
+                                        "code": -32603,
+                                        "message": "Session data cleanup did not complete",
+                                    },
+                                },
+                                separators=(",", ":"),
+                            )
                     except Exception:
                         logger.exception("Failed to persist ACP metadata for user %s", user_id)
                     storage.schedule_artifact_mirror(user_id, message)

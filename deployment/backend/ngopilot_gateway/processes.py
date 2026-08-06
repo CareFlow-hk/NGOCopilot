@@ -133,6 +133,13 @@ class TenantProcessManager:
                 name=f"ngopilot-idle-{user_id}",
             )
 
+    async def checkpoint(self, user_id: UUID) -> None:
+        """Stop a tenant now so its closed databases can be safely snapshotted."""
+        async with self._lock(user_id):
+            managed = self._processes.pop(user_id, None)
+            if managed is not None:
+                await self._stop(managed, strict_cache=True)
+
     async def _stop_after_idle(self, user_id: UUID, expected: ManagedProcess) -> None:
         try:
             await asyncio.sleep(self.settings.ngopilot_process_idle_seconds)
@@ -262,6 +269,7 @@ class TenantProcessManager:
                 "GOOSE_PATH_ROOT": str(goose_root),
                 "GOOSE_PROVIDER": self.settings.goose_provider,
                 "GOOSE_MODEL": self.settings.goose_model,
+                "CAREFLOW_VISION_MODEL": self.settings.careflow_vision_model,
                 "GOOSE_DISABLE_KEYRING": "true",
                 "OPENROUTER_API_KEY": self.settings.openrouter_api_key,
                 "NGOPILOT_MCP_STATE_DIR": str(workflow_root),
@@ -343,7 +351,7 @@ class TenantProcessManager:
         except asyncio.CancelledError:
             return
 
-    async def _stop(self, managed: ManagedProcess) -> None:
+    async def _stop(self, managed: ManagedProcess, *, strict_cache: bool = False) -> None:
         if managed.idle_task is not None and managed.idle_task is not asyncio.current_task():
             managed.idle_task.cancel()
             managed.idle_task = None
@@ -365,3 +373,5 @@ class TenantProcessManager:
             except Exception:
                 # A failed snapshot must retain the local cache for a later retry.
                 logger.exception("Failed to persist tenant cache for user %s", managed.user_id)
+                if strict_cache:
+                    raise

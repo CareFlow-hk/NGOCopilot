@@ -9,6 +9,7 @@ import logging
 import mimetypes
 import re
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import unquote, urlsplit
@@ -284,12 +285,22 @@ class StorageService:
             "sha256": digest.hexdigest(),
         }
 
-    async def resolve_placeholder(self, user_id: UUID, placeholder: str) -> str:
+    async def resolve_placeholder(
+        self,
+        user_id: UUID,
+        placeholder: str,
+        *,
+        agent_session_id: str | None = None,
+    ) -> str:
         parse_placeholder(placeholder)
         deadline = asyncio.get_running_loop().time() + self.settings.upload_resolve_timeout_seconds
         while True:
             row = await self.db.upload_for_placeholder(user_id, placeholder)
             if row is not None and row["status"] == "ready" and row["local_path"]:
+                if agent_session_id is not None:
+                    await self.db.attach_upload_to_session(
+                        user_id, placeholder, agent_session_id
+                    )
                 try:
                     path = validate_tenant_file(
                         self.settings.data_root, user_id, row["local_path"], "uploads"
@@ -307,7 +318,13 @@ class StorageService:
                 raise PlaceholderError("Upload is not ready; try sending the prompt again")
             await asyncio.sleep(0.1)
 
-    async def resolve_payload(self, user_id: UUID, value: Any) -> Any:
+    async def resolve_payload(
+        self,
+        user_id: UUID,
+        value: Any,
+        *,
+        agent_session_id: str | None = None,
+    ) -> Any:
         placeholders: set[str] = set()
 
         def collect(item: Any) -> None:
@@ -324,7 +341,10 @@ class StorageService:
         if not placeholders:
             return value
         replacements = {
-            item: await self.resolve_placeholder(user_id, item) for item in placeholders
+            item: await self.resolve_placeholder(
+                user_id, item, agent_session_id=agent_session_id
+            )
+            for item in placeholders
         }
 
         def replace(item: Any) -> Any:
@@ -416,10 +436,17 @@ class StorageService:
         seen: set[Path] = set()
         raw_paths: set[str] = set()
         job_id: str | None = None
+        agent_session_id: str | None = None
         for mapping in iter_mappings(payload):
             candidate_job_id = mapping.get("job_id")
             if isinstance(candidate_job_id, str) and len(candidate_job_id) <= 96:
                 job_id = candidate_job_id
+            candidate_session_id = mapping.get("sessionId") or mapping.get("session_id")
+            if (
+                isinstance(candidate_session_id, str)
+                and 0 < len(candidate_session_id) <= 256
+            ):
+                agent_session_id = candidate_session_id
             for key in ("path", "output_path", "artifact_path"):
                 raw_path = mapping.get(key)
                 if isinstance(raw_path, str) and raw_path.startswith("/"):
@@ -463,6 +490,7 @@ class StorageService:
                 artifact_id=artifact_id,
                 user_id=user_id,
                 job_id=job_id,
+                agent_session_id=agent_session_id,
                 filename=path.name,
                 content_type=content_type,
                 size_bytes=size,
@@ -601,6 +629,69 @@ class StorageService:
                 logger.warning("Ignoring unexpected data-root directory: %s", path.name)
                 continue
             await self.persist_and_evict_tenant_cache(user_id)
+
+    async def delete_session_objects(
+        self, user_id: UUID, object_keys: Iterable[str]
+    ) -> None:
+        if self._s3 is None:
+            return
+        allowed_prefixes = (
+            f"tenants/{user_id}/uploads/",
+            f"tenants/{user_id}/artifacts/",
+        )
+        for object_key in sorted(set(object_keys)):
+            if not object_key.startswith(allowed_prefixes):
+                raise RuntimeError("Session object key is outside the tenant storage prefixes")
+            await self._delete_object_versions(object_key, exact_key=object_key)
+
+    async def purge_superseded_runtime_snapshots(self, user_id: UUID) -> None:
+        """Remove every runtime snapshot/version except the current committed snapshot."""
+        if self._s3 is None:
+            return
+        pointer_key = self._snapshot_pointer_key(user_id)
+        pointer = await self._snapshot_json(pointer_key)
+        if pointer is None:
+            return
+        snapshot_id = self._snapshot_id(pointer)
+        current_prefix = f"tenants/{user_id}/runtime-snapshots/{snapshot_id}/"
+        runtime_prefix = f"tenants/{user_id}/runtime-snapshots/"
+        assert self._s3 is not None
+
+        def delete() -> None:
+            key_marker: str | None = None
+            version_marker: str | None = None
+            while True:
+                params: dict[str, Any] = {
+                    "Bucket": self.settings.s3_bucket,
+                    "Prefix": runtime_prefix,
+                }
+                if key_marker is not None:
+                    params["KeyMarker"] = key_marker
+                if version_marker is not None:
+                    params["VersionIdMarker"] = version_marker
+                response = self._s3.list_object_versions(**params)
+                current_versions = response.get("Versions", [])
+                objects = [
+                    {"Key": item["Key"], "VersionId": item["VersionId"]}
+                    for item in current_versions + response.get("DeleteMarkers", [])
+                    if not item["Key"].startswith(current_prefix)
+                    and not (
+                        item["Key"] == pointer_key
+                        and item.get("IsLatest") is True
+                        and item in current_versions
+                    )
+                ]
+                if objects:
+                    self._s3.delete_objects(
+                        Bucket=self.settings.s3_bucket,
+                        Delete={"Objects": objects, "Quiet": True},
+                    )
+                if not response.get("IsTruncated"):
+                    break
+                key_marker = response.get("NextKeyMarker")
+                version_marker = response.get("NextVersionIdMarker")
+
+        await asyncio.to_thread(delete)
 
     async def _wait_for_artifact_tasks(self, user_id: UUID) -> None:
         tasks = [task for task, owner in self._task_users.items() if owner == user_id]
@@ -799,7 +890,11 @@ class StorageService:
         )
 
     async def _delete_object_versions(
-        self, prefix: str, *, keep_latest_key: str | None = None
+        self,
+        prefix: str,
+        *,
+        keep_latest_key: str | None = None,
+        exact_key: str | None = None,
     ) -> None:
         assert self._s3 is not None
 
@@ -820,7 +915,8 @@ class StorageService:
                 objects = [
                     {"Key": item["Key"], "VersionId": item["VersionId"]}
                     for item in versions
-                    if not (
+                    if (exact_key is None or item["Key"] == exact_key)
+                    and not (
                         keep_latest_key is not None
                         and item["Key"] == keep_latest_key
                         and item.get("IsLatest") is True

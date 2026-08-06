@@ -52,6 +52,8 @@ def test_worker_uses_managed_site_packages_before_host_package(
 
     monkeypatch.setenv("PYTHONPATH", "/host/site-packages")
     monkeypatch.setenv("PYTHONHOME", "/host/python")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "shared-agent-test-key")
+    monkeypatch.setenv("CAREFLOW_VISION_MODEL", "openai/gpt-4.1-mini")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     result = WorkerClient(settings)._run(
@@ -70,4 +72,6 @@ def test_worker_uses_managed_site_packages_before_host_package(
     assert isinstance(env, dict)
     assert "PYTHONPATH" not in env
     assert "PYTHONHOME" not in env
+    assert env["OPENROUTER_API_KEY"] == "shared-agent-test-key"
+    assert env["CAREFLOW_VISION_MODEL"] == "openai/gpt-4.1-mini"
     assert result == {"templates": []}

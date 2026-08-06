@@ -7,6 +7,7 @@ rendering, encryption, or burn algorithm.
 
 from __future__ import annotations
 
+from importlib import reload
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,7 @@ def _start(payload: dict[str, Any]) -> dict[str, Any]:
             mode=mode,
         )
         session = _load_session(db, dependencies["VisitSession"], native_session_id)
+        _normalise_llm_metadata(db, session, dependencies.get("llm_adapter"))
         return _response(session, dependencies, include_transcript=True)
 
 
@@ -113,10 +115,26 @@ def _burn(payload: dict[str, Any]) -> dict[str, Any]:
 def _dependencies() -> dict[str, Any]:
     # CareFlow deliberately remains behind the worker-only module boundary.
     from app.config import settings
+    from app.llm import client as careflow_llm_client
+
+    from ngopilot_mcp.workers.careflow_llm_adapter import (
+        install_careflow_llm_adapter,
+    )
+
+    llm_adapter = install_careflow_llm_adapter(settings, careflow_llm_client)
+
     from app.db import engine, init_db
     from app.models import VisitSession
     from app.services import home_visit
+    from app.services.visit_note_agent import llm_client as visit_note_llm
     from sqlmodel import Session
+
+    # CareFlow couples its text mock patch to a missing ASR key. Reloading only
+    # this client module restores the real text functions; transcription itself
+    # remains on CareFlow's unchanged DashScope/mock path.
+    if llm_adapter.enabled:
+        visit_note_llm = reload(visit_note_llm)
+    llm_adapter.bind(visit_note_llm)
 
     return {
         "Session": Session,
@@ -124,6 +142,7 @@ def _dependencies() -> dict[str, Any]:
         "engine": engine,
         "home_visit": home_visit,
         "init_db": init_db,
+        "llm_adapter": llm_adapter,
         "settings": settings,
     }
 
@@ -177,6 +196,21 @@ def _response(
             ) from exc
         response["native_artifact_path"] = str(native_path)
     return response
+
+
+def _normalise_llm_metadata(db: Any, session: Any, adapter: Any) -> None:
+    if (
+        adapter is None
+        or not adapter.enabled
+        or not session.ai_provider
+        or session.ai_provider == "mock"
+    ):
+        return
+    session.ai_provider = adapter.provider
+    session.ai_model = adapter.model
+    db.add(session)
+    db.commit()
+    db.refresh(session)
 
 
 def _load_session(db: Any, model: Any, native_session_id: int) -> Any:

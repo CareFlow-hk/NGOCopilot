@@ -30,6 +30,7 @@ from .auth import router as auth_router
 from .config import Settings, get_settings
 from .db import Database, apply_migrations
 from .processes import TenantProcessManager, executable_available
+from .session_deletion import SessionDeletionService
 from .storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         app.state.db = db
         app.state.processes = processes
         app.state.storage = storage
+        app.state.session_deletion = SessionDeletionService(db, processes, storage)
         try:
             await storage.evict_stale_tenant_caches()
             yield

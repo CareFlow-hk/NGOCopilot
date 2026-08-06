@@ -53,5 +53,15 @@ async def test_migration_auth_ticket_and_chat_projection() -> None:
             "SELECT count(*) FROM messages WHERE user_id = $1", user["id"]
         )
         assert count == 1
+
+        assert await database.delete_chat_session(user["id"], "agent-session-1") is True
+        remaining = await database._pool().fetchval(
+            "SELECT count(*) FROM chat_sessions WHERE user_id = $1", user["id"]
+        )
+        messages = await database._pool().fetchval(
+            "SELECT count(*) FROM messages WHERE user_id = $1", user["id"]
+        )
+        assert remaining == 0
+        assert messages == 0
     finally:
         await database.close()

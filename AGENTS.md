@@ -1,5 +1,36 @@
 # NGOPilot Agent Notes
 
+## Development boundaries
+
+- Treat `algo-dependencies/` as read-only. Never edit, patch, format, or add files
+  there; implement all integration and compatibility work in NGOPilot-owned
+  adapters so an algorithm dependency can be upgraded by replacing its directory
+  with a fresh clone.
+
+## Future extension of tool
+
+Design MCP changes for additive extensibility: adding, replacing, or removing one
+tool must not require changes inside another tool's implementation.
+
+- Add every new tool as an independent sibling under
+  `MCPcode/src/ngopilot_mcp/tools/<tool_name>/`, following the current four tools
+  and the MCP pre-build algorithm design plan.
+- Give each tool its own `manifest.py`, `schemas.py`, `controller.py`,
+  `validation.py`, `native_adapter.py`, `state.py`, `artifacts.py`, and
+  `__init__.py`, plus a matching test directory under `MCPcode/tests/tools/`.
+- Expose the standard `MANIFEST` and `CONTROLLER` contract, then connect the tool
+  only through composition points such as the host registry, worker dispatch,
+  runtime/bootstrap configuration, and packaging. Do not add tool-specific
+  branches to an existing tool.
+- Keep workflow schemas, validation, state transitions, dependency calls, and
+  artifact rules inside the tool package. A tool may use domain-neutral shared
+  infrastructure, but it must never import or call another tool implementation.
+- Move code into `shared/` only when it is genuinely domain-neutral and used by
+  multiple tools; shared code must not encode one tool's workflow assumptions.
+- Verify the new tool with isolated contract, validation, adapter, controller,
+  artifact, and lifecycle tests. Existing tool tests must continue to pass
+  without modification unless a shared public contract intentionally changes.
+
 ## Deployment authentication
 
 The local deployment CLIs were authenticated on 2026-08-03:

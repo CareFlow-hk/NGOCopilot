@@ -242,18 +242,42 @@ class Database:
             archived,
         )
 
-    async def delete_chat_session(self, user_id: UUID, agent_session_id: str) -> None:
-        await self._pool().execute(
+    async def session_object_keys(
+        self, user_id: UUID, agent_session_id: str
+    ) -> list[str]:
+        rows = await self._pool().fetch(
             """
-            UPDATE chat_sessions
-            SET deleted_at = COALESCE(deleted_at, now()),
-                status = 'deleted',
-                updated_at = now()
+            SELECT DISTINCT storage.object_key
+            FROM storage_objects AS storage
+            JOIN chat_sessions AS chat
+              ON chat.user_id = storage.user_id
+             AND chat.user_id = $1
+             AND chat.agent_session_id = $2
+            WHERE storage.object_key IS NOT NULL
+              AND (
+                  storage.session_id = chat.id
+                  OR storage.job_id IN (
+                      SELECT job_id
+                      FROM jobs
+                      WHERE user_id = $1 AND agent_session_id = $2
+                  )
+              )
+            """,
+            user_id,
+            agent_session_id[:256],
+        )
+        return [str(row["object_key"]) for row in rows]
+
+    async def delete_chat_session(self, user_id: UUID, agent_session_id: str) -> bool:
+        result = await self._pool().execute(
+            """
+            DELETE FROM chat_sessions
             WHERE user_id = $1 AND agent_session_id = $2
             """,
             user_id,
             agent_session_id[:256],
         )
+        return result == "DELETE 1"
 
     async def record_message(
         self,
@@ -419,6 +443,26 @@ class Database:
             placeholder,
         )
 
+    async def attach_upload_to_session(
+        self, user_id: UUID, placeholder: str, agent_session_id: str
+    ) -> None:
+        await self._pool().execute(
+            """
+            UPDATE storage_objects AS storage
+            SET session_id = chat.id
+            FROM chat_sessions AS chat
+            WHERE storage.user_id = $1
+              AND storage.kind = 'upload'
+              AND storage.metadata->>'placeholder' = $2
+              AND storage.deleted_at IS NULL
+              AND chat.user_id = storage.user_id
+              AND chat.agent_session_id = $3
+            """,
+            user_id,
+            placeholder,
+            agent_session_id[:256],
+        )
+
     async def ready_uploads_for_user(self, user_id: UUID) -> list[asyncpg.Record]:
         return await self._pool().fetch(
             """
@@ -439,6 +483,7 @@ class Database:
         artifact_id: UUID,
         user_id: UUID,
         job_id: str | None,
+        agent_session_id: str | None,
         filename: str,
         content_type: str,
         size_bytes: int,
@@ -449,15 +494,33 @@ class Database:
         await self._pool().execute(
             """
             INSERT INTO storage_objects (
-                id, user_id, job_id, kind, filename, content_type, size_bytes,
-                sha256, local_path, object_key, status, verified_at
+                id, user_id, session_id, job_id, kind, filename, content_type,
+                size_bytes, sha256, local_path, object_key, status, verified_at
             ) VALUES (
-                $1, $2, $3, 'artifact', $4, $5, $6, $7, $8, $9, 'ready', now()
+                $1,
+                $2,
+                (
+                    SELECT id FROM chat_sessions
+                    WHERE user_id = $2 AND agent_session_id = $4
+                ),
+                $3,
+                'artifact',
+                $5,
+                $6,
+                $7,
+                $8,
+                $9,
+                $10,
+                'ready',
+                now()
             )
             ON CONFLICT (user_id, local_path)
                 WHERE local_path IS NOT NULL AND deleted_at IS NULL
             DO UPDATE SET
                 job_id = COALESCE(EXCLUDED.job_id, storage_objects.job_id),
+                session_id = COALESCE(
+                    storage_objects.session_id, EXCLUDED.session_id
+                ),
                 size_bytes = EXCLUDED.size_bytes,
                 sha256 = EXCLUDED.sha256,
                 object_key = EXCLUDED.object_key,
@@ -467,6 +530,7 @@ class Database:
             artifact_id,
             user_id,
             job_id[:96] if job_id else None,
+            agent_session_id[:256] if agent_session_id else None,
             filename[:255],
             content_type[:255],
             size_bytes,

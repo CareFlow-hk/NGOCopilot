@@ -33,6 +33,18 @@ def handle(operation: str, payload: dict[str, Any]) -> dict[str, Any]:
 def _dependencies() -> dict[str, Any]:
     import fitz
     from app.config import settings
+    from app.llm import client as careflow_llm_client
+
+    from ngopilot_mcp.workers.careflow_llm_adapter import (
+        install_careflow_llm_adapter,
+    )
+
+    llm_adapter = install_careflow_llm_adapter(settings, careflow_llm_client)
+
+    from app.llm import text, vision
+
+    llm_adapter.bind(text, vision)
+
     from app.services import (
         welfare_form,
         welfare_form_extractor,
@@ -49,6 +61,7 @@ def _dependencies() -> dict[str, Any]:
         "filler": welfare_form_filler,
         "mapper": welfare_form_mapping,
         "load_template": load_template,
+        "llm_adapter": llm_adapter,
     }
 
 

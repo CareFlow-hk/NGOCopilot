@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     goose_provider: str = "openrouter"
     goose_model: str = "moonshotai/kimi-k2.6"
+    careflow_vision_model: str = "openai/gpt-4.1-mini"
     openrouter_api_key: str = ""
     ngopilot_bin: str = "ngopilot"
     ngopilot_mcp_bin: str = "ngopilot-mcp"

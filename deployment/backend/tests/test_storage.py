@@ -24,6 +24,9 @@ class UploadDatabase:
     async def upload_for_placeholder(self, user_id, placeholder):
         return self.row
 
+    async def attach_upload_to_session(self, user_id, placeholder, agent_session_id):
+        self.attached = (user_id, placeholder, agent_session_id)
+
 
 class CacheDatabase:
     def __init__(self, uploads=None, artifact=None):
@@ -131,6 +134,29 @@ async def test_resolve_payload_uses_only_owned_ready_upload(settings) -> None:
     }
 
 
+@pytest.mark.asyncio
+async def test_resolve_payload_attaches_upload_to_session(settings) -> None:
+    user_id = uuid4()
+    upload_id = uuid4()
+    placeholder = f"ngopilot-upload://{upload_id}/source.xlsx"
+    relative = Path("tenants") / str(user_id) / "uploads" / str(upload_id) / "source.xlsx"
+    path = settings.data_root / relative
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"input")
+    database = UploadDatabase(
+        {"status": "ready", "local_path": relative.as_posix()}
+    )
+    service = StorageService(settings, database)
+
+    await service.resolve_payload(
+        user_id,
+        {"prompt": placeholder},
+        agent_session_id="session-1",
+    )
+
+    assert database.attached == (user_id, placeholder, "session-1")
+
+
 def test_tenant_file_rejects_symlink_escape(settings, tmp_path: Path) -> None:
     user_id = uuid4()
     upload_root = settings.data_root / "tenants" / str(user_id) / "uploads"
@@ -202,6 +228,52 @@ async def test_tenant_cache_round_trips_through_s3_and_removes_old_snapshot(sett
     second_pointer = json.loads(s3.objects[pointer_key])
     assert second_pointer["snapshot_id"] != first_pointer["snapshot_id"]
     assert not any(key.startswith(first_prefix) for key in s3.objects)
+
+
+@pytest.mark.asyncio
+async def test_session_object_cleanup_removes_only_exact_owned_keys(settings) -> None:
+    user_id = uuid4()
+    upload_key = f"tenants/{user_id}/uploads/upload-1"
+    sibling_key = f"{upload_key}-sibling"
+    service = StorageService(settings, CacheDatabase())
+    service._s3 = MemoryS3()
+    service._s3.objects.update({upload_key: b"delete", sibling_key: b"keep"})
+
+    await service.delete_session_objects(user_id, [upload_key])
+
+    assert upload_key not in service._s3.objects
+    assert service._s3.objects[sibling_key] == b"keep"
+
+
+@pytest.mark.asyncio
+async def test_runtime_history_purge_keeps_only_current_snapshot(settings) -> None:
+    user_id = uuid4()
+    service = StorageService(settings, CacheDatabase())
+    service._s3 = MemoryS3()
+    pointer_key = service._snapshot_pointer_key(user_id)
+    current_id = str(uuid4())
+    old_id = str(uuid4())
+    current_key = f"tenants/{user_id}/runtime-snapshots/{current_id}/manifest.json"
+    old_key = f"tenants/{user_id}/runtime-snapshots/{old_id}/manifest.json"
+    service._s3.objects.update(
+        {
+            pointer_key: json.dumps(
+                {
+                    "version": 1,
+                    "snapshot_id": current_id,
+                    "manifest_key": current_key,
+                }
+            ).encode(),
+            current_key: b"current",
+            old_key: b"contains-deleted-session",
+        }
+    )
+
+    await service.purge_superseded_runtime_snapshots(user_id)
+
+    assert pointer_key in service._s3.objects
+    assert current_key in service._s3.objects
+    assert old_key not in service._s3.objects
 
 
 @pytest.mark.asyncio

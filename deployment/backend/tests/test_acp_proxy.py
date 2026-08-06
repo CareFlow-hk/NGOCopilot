@@ -54,6 +54,64 @@ async def test_successful_session_mutations_are_projected(
     assert expected in [str(call[0]) for call in database.calls]
 
 
+@pytest.mark.asyncio
+async def test_session_deletion_uses_cloud_cleanup_callback(settings) -> None:
+    database = RecordingDatabase()
+    user_id = uuid4()
+    deleted: list[tuple[object, str]] = []
+
+    async def delete_session(owner, session_id):
+        deleted.append((owner, session_id))
+
+    recorder = AcpRecorder(
+        database,
+        settings,
+        user_id,
+        delete_session=delete_session,
+    )
+    await recorder.client_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "session/delete",
+            "params": {"sessionId": "session-1"},
+        }
+    )
+    await recorder.agent_message({"jsonrpc": "2.0", "id": 8, "result": {}})
+
+    assert deleted == [(user_id, "session-1")]
+    assert "delete_chat_session" not in [str(call[0]) for call in database.calls]
+
+
+@pytest.mark.asyncio
+async def test_failed_agent_deletion_does_not_run_cloud_cleanup(settings) -> None:
+    database = RecordingDatabase()
+    deleted: list[str] = []
+
+    async def delete_session(owner, session_id):
+        deleted.append(session_id)
+
+    recorder = AcpRecorder(
+        database,
+        settings,
+        uuid4(),
+        delete_session=delete_session,
+    )
+    await recorder.client_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "session/delete",
+            "params": {"sessionId": "session-1"},
+        }
+    )
+    await recorder.agent_message(
+        {"jsonrpc": "2.0", "id": 9, "error": {"code": -32603, "message": "failed"}}
+    )
+
+    assert deleted == []
+
+
 def test_extract_jobs_finds_nested_tool_payload() -> None:
     value = {"content": '{"job_id":"job-123","tool_name":"roster_copilot","state":"ready"}'}
 
