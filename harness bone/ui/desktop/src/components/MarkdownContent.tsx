@@ -232,7 +232,7 @@ const MarkdownCode = memo(
     ref: React.Ref<HTMLElement>
   ) {
     const match = /language-(\w+)/.exec(className || '');
-    if (inline && artifactDownloadsEnabled() && isArtifactPath(String(children))) {
+    if (artifactDownloadsEnabled() && isArtifactPath(String(children))) {
       return <ArtifactPathLink path={String(children)} />;
     }
 

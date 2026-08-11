@@ -93,6 +93,33 @@ describe('MarkdownContent', () => {
         window.electron.openExternal = originalOpenExternal;
       }
     });
+
+    it('turns an inline-code CareFlow artifact path into a download link', async () => {
+      const artifactPath =
+        '/data/tenants/e6300d72-5803-4b89-b56d-d63da2934748/workflow/jobs/careflow_paper_forms_to_excel/job_82560afe60fb47c99598dcf7464a6d0c/outputs/ff3f0f660050_batch_4_20260806_135134.xlsx';
+      const openExternal = vi.fn(() => Promise.resolve());
+      const originalAppConfig = window.appConfig;
+      const originalOpenExternal = window.electron.openExternal;
+      window.appConfig = {
+        ...originalAppConfig,
+        get: vi.fn((key: string) => (key === 'NGOPILOT_CLOUD' ? true : undefined)),
+      };
+      window.electron.openExternal = openExternal;
+
+      try {
+        renderWithIntl(<MarkdownContent content={`**File ready:** \`${artifactPath}\``} />);
+        const link = await screen.findByRole('link', {
+          name: 'Download ff3f0f660050_batch_4_20260806_135134.xlsx',
+        });
+
+        expect(link).toHaveAttribute('href', artifactPath);
+        fireEvent.click(link);
+        expect(openExternal).toHaveBeenCalledWith(artifactPath);
+      } finally {
+        window.appConfig = originalAppConfig;
+        window.electron.openExternal = originalOpenExternal;
+      }
+    });
   });
 
   describe('HTML Security Integration', () => {
