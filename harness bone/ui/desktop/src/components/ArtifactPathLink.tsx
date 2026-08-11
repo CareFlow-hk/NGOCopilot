@@ -5,7 +5,7 @@ import {
   artifactDownloadsEnabled,
   artifactFilename,
   artifactFilesystemPath,
-  findArtifactPaths,
+  findDownloadableArtifactPaths,
 } from '../utils/artifactPaths';
 
 const i18n = defineMessages({
@@ -44,11 +44,12 @@ export function ArtifactPathLink({
   const [isDownloading, setIsDownloading] = useState(false);
   const filesystemPath = artifactFilesystemPath(path);
   const filename = artifactFilename(filesystemPath);
+  const displayFilename = typeof children === 'string' && children.trim() ? children : filename;
   const color = inverted
     ? 'border-gray-600 bg-gray-800 text-gray-100 hover:bg-gray-700 focus-visible:ring-gray-400'
     : 'border-border-primary bg-background-secondary text-text-primary hover:bg-background-primary focus-visible:ring-border-primary';
 
-  const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleDownload = async (event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
     if (isDownloading) return;
@@ -73,8 +74,9 @@ export function ArtifactPathLink({
     <a
       href={filesystemPath}
       title={filesystemPath}
-      aria-label={`Download ${filename}`}
+      aria-label={intl.formatMessage(i18n.download, { filename: displayFilename })}
       aria-busy={isDownloading}
+      aria-disabled={isDownloading}
       data-artifact-path={filesystemPath}
       className={`my-0.5 inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 align-middle font-sans text-xs font-medium no-underline transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none ${color}`}
       onClick={(event) => void handleDownload(event)}
@@ -93,7 +95,7 @@ export function ArtifactPathLink({
 
 export function ArtifactText({ text }: { text: string }) {
   const matches = useMemo(
-    () => (artifactDownloadsEnabled() ? findArtifactPaths(text) : []),
+    () => (artifactDownloadsEnabled() ? findDownloadableArtifactPaths(text) : []),
     [text]
   );
 
@@ -114,8 +116,8 @@ export function ArtifactText({ text }: { text: string }) {
 export function ArtifactLinkList({ text }: { text: string }) {
   const matches = useMemo(() => {
     if (!artifactDownloadsEnabled()) return [];
-    const unique = new Map<string, ReturnType<typeof findArtifactPaths>[number]>();
-    for (const match of findArtifactPaths(text)) unique.set(match.path, match);
+    const unique = new Map<string, ReturnType<typeof findDownloadableArtifactPaths>[number]>();
+    for (const match of findDownloadableArtifactPaths(text)) unique.set(match.path, match);
     return [...unique.values()];
   }, [text]);
 

@@ -1,4 +1,5 @@
-const TENANT_FILE_PATH_PATTERN = /\/data\/tenants\/[^\r\n\"'`<>\[\]{}|\\]+/g;
+const TENANT_FILE_PATH_PATTERN = /\/data\/tenants\/[^\r\n"'`<>[\]{}|\\]+/g;
+const NATIVE_DOWNLOAD_PATH_PATTERN = /\/api\/files\/[^\s"'`<>[\]{}|\\]+/g;
 const TRAILING_PROSE_PUNCTUATION = /[),.;:!?]+$/;
 const INTERNAL_WORKFLOW_PATH_SEGMENTS = [
   '/inputs/',
@@ -56,6 +57,53 @@ export function findArtifactPaths(text: string): ArtifactPathMatch[] {
   }
 
   return matches;
+}
+
+function nativeDownloadPaths(text: string): ArtifactPathMatch[] {
+  return [...text.matchAll(NATIVE_DOWNLOAD_PATH_PATTERN)].map((match) => {
+    const matchedText = match[0];
+    const path = matchedText.replace(TRAILING_PROSE_PUNCTUATION, '');
+    const start = match.index ?? 0;
+    return {
+      path,
+      filename: artifactFilename(path),
+      start,
+      end: start + path.length,
+    };
+  });
+}
+
+function resolveNativeDownload(
+  nativePath: ArtifactPathMatch,
+  artifacts: ArtifactPathMatch[]
+): ArtifactPathMatch | null {
+  const candidates = artifacts.filter(
+    (artifact) =>
+      artifact.filename === nativePath.filename ||
+      artifact.filename.endsWith(`_${nativePath.filename}`)
+  );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Find links that the cloud host can actually download. Native `/api/files/...`
+ * routes are resolved only when the same response contains one unambiguous
+ * promoted tenant artifact, so stale or fabricated native URLs never become links.
+ */
+export function findDownloadableArtifactPaths(
+  text: string,
+  artifacts: ArtifactPathMatch[] = findArtifactPaths(text)
+): ArtifactPathMatch[] {
+  const matches = [...findArtifactPaths(text)];
+  for (const nativePath of nativeDownloadPaths(text)) {
+    const artifact = resolveNativeDownload(nativePath, artifacts);
+    if (!artifact) continue;
+    matches.push({
+      ...nativePath,
+      path: artifact.path,
+    });
+  }
+  return matches.sort((left, right) => left.start - right.start);
 }
 
 export function isArtifactPath(value: string): boolean {

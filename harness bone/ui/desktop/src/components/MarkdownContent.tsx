@@ -34,6 +34,7 @@ import { defineMessages, useIntl } from '../i18n';
 import { ArtifactLinkList, ArtifactPathLink } from './ArtifactPathLink';
 import {
   artifactDownloadsEnabled,
+  findDownloadableArtifactPaths,
   findArtifactPaths,
   isArtifactPath,
 } from '../utils/artifactPaths';
@@ -90,16 +91,19 @@ interface MarkdownAstNode {
   children?: MarkdownAstNode[];
 }
 
-function replaceArtifactTextNodes(node: MarkdownAstNode): void {
+function replaceArtifactTextNodes(
+  node: MarkdownAstNode,
+  sourceArtifacts: ReturnType<typeof findArtifactPaths>
+): void {
   if (!node.children || node.type === 'link' || node.type === 'linkReference') return;
 
   node.children = node.children.flatMap((child) => {
     if (child.type !== 'text' || typeof child.value !== 'string') {
-      replaceArtifactTextNodes(child);
+      replaceArtifactTextNodes(child, sourceArtifacts);
       return [child];
     }
 
-    const matches = findArtifactPaths(child.value);
+    const matches = findDownloadableArtifactPaths(child.value, sourceArtifacts);
     if (matches.length === 0) return [child];
 
     const replacements: MarkdownAstNode[] = [];
@@ -123,8 +127,10 @@ function replaceArtifactTextNodes(node: MarkdownAstNode): void {
   });
 }
 
-const remarkArtifactLinks = () => (tree: unknown) => {
-  if (artifactDownloadsEnabled()) replaceArtifactTextNodes(tree as MarkdownAstNode);
+const remarkArtifactLinks = (options?: { source?: string }) => (tree: unknown) => {
+  if (artifactDownloadsEnabled()) {
+    replaceArtifactTextNodes(tree as MarkdownAstNode, findArtifactPaths(options?.source ?? ''));
+  }
 };
 
 // Memoized CodeBlock component to prevent re-rendering when props haven't changed
@@ -320,7 +326,7 @@ const MarkdownContent = memo(function MarkdownContent({
             remarkGfm,
             remarkBreaks,
             [remarkMath, { singleDollarTextMath: false }],
-            remarkArtifactLinks,
+            [remarkArtifactLinks, { source: processedContent }],
           ]}
           rehypePlugins={[
             [

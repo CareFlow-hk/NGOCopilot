@@ -62,11 +62,24 @@ async function openArtifact(path: string): Promise<void> {
   if (!response.ok) {
     throw new ApiError("The generated file is not available", response.status);
   }
-  const payload = (await response.json()) as { url?: unknown };
-  if (typeof payload.url !== "string" || !payload.url) {
+  const payload = (await response.json()) as { url?: unknown; filename?: unknown };
+  if (
+    typeof payload.url !== "string" ||
+    !payload.url ||
+    typeof payload.filename !== "string" ||
+    !payload.filename
+  ) {
     throw new Error("The artifact gateway returned an invalid download URL");
   }
-  window.open(payload.url, "_blank", "noopener,noreferrer");
+
+  const link = document.createElement("a");
+  link.href = payload.url;
+  link.download = payload.filename;
+  link.rel = "noopener noreferrer";
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
 }
 
 async function openExternal(url: string): Promise<void> {

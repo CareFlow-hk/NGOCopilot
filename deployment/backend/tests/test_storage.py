@@ -47,6 +47,7 @@ class CacheDatabase:
 class MemoryS3:
     def __init__(self):
         self.objects: dict[str, bytes] = {}
+        self.presigned_request = None
 
     def upload_file(self, filename, bucket, key, ExtraArgs=None):
         self.objects[key] = Path(filename).read_bytes()
@@ -84,6 +85,11 @@ class MemoryS3:
             self.objects.pop(item["Key"], None)
 
     def generate_presigned_url(self, operation, *, Params, ExpiresIn):
+        self.presigned_request = {
+            "operation": operation,
+            "params": Params,
+            "expires_in": ExpiresIn,
+        }
         return f"https://s3.example.test/{Params['Key']}?expires={ExpiresIn}"
 
 
@@ -294,6 +300,12 @@ async def test_artifact_url_remains_available_after_local_cache_eviction(setting
 
     assert result["filename"] == "roster.xlsx"
     assert result["url"].startswith("https://s3.example.test/")
+    assert service._s3.presigned_request["params"]["ResponseContentDisposition"] == (
+        'attachment; filename="roster.xlsx"'
+    )
+    assert service._s3.presigned_request["params"]["ResponseContentType"] == artifact[
+        "content_type"
+    ]
 
 
 @pytest.mark.asyncio

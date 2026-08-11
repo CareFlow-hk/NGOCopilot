@@ -251,6 +251,9 @@ class PaperFormsToExcelController:
             result["output_path"] = artifact.path
             export_result = result.get("export")
             if isinstance(export_result, dict):
+                # The native HTTP route is not reachable from the cloud UI. Expose only
+                # the promoted artifact path that the host can authorize and download.
+                export_result.pop("download_url", None)
                 export_result["output_path"] = artifact.path
             refs = dict(getattr(job, "native_refs", {}))
             refs.update(native_refs)

@@ -55,5 +55,12 @@ mod tests {
                 "missing built-in skill: {name}"
             );
         }
+
+        let paper_forms = skills
+            .iter()
+            .find(|skill| skill.contains("name: careflow-paper-forms-to-excel"))
+            .expect("missing paper forms skill");
+        assert!(paper_forms.contains("promoted `artifacts[0].path`"));
+        assert!(paper_forms.contains("[Download batch.xlsx]"));
     }
 }

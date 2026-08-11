@@ -292,6 +292,7 @@ def test_partial_export_promotes_native_workbook_and_returns_owned_path(
     assert execution.result["exported_row_count"] == 1
     assert execution.result["output_path"].endswith("/outputs/volunteer-forms.xlsx")
     assert execution.result["export"]["output_path"] == execution.result["output_path"]
+    assert "download_url" not in execution.result["export"]
     assert execution.artifacts[0].native_path == str(native_path)
     assert Path(execution.artifacts[0].path).exists()
 

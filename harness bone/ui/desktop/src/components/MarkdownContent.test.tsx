@@ -61,6 +61,38 @@ describe('MarkdownContent', () => {
         window.appConfig = originalAppConfig;
       }
     });
+
+    it('turns the production CareFlow download field into a working Excel link', async () => {
+      const artifactPath =
+        '/data/tenants/e6300d72-5803-4b89-b56d-d63da2934748/workflow/jobs/careflow_paper_forms_to_excel/job_82560afe60fb47c99598dcf7464a6d0c/outputs/ff3f0f660050_batch_4_20260806_135134.xlsx';
+      const content = [
+        '**Download**: /api/files/exports/batch_4_20260806_135134.xlsx',
+        `**Local path**: ${artifactPath}`,
+      ].join('\n');
+      const openExternal = vi.fn(() => Promise.resolve());
+      const originalAppConfig = window.appConfig;
+      const originalOpenExternal = window.electron.openExternal;
+      window.appConfig = {
+        ...originalAppConfig,
+        get: vi.fn((key: string) => (key === 'NGOPILOT_CLOUD' ? true : undefined)),
+      };
+      window.electron.openExternal = openExternal;
+
+      try {
+        const { container } = renderWithIntl(<MarkdownContent content={content} />);
+        const link = await screen.findByRole('link', {
+          name: 'Download batch_4_20260806_135134.xlsx',
+        });
+
+        expect(link).toHaveAttribute('href', artifactPath);
+        expect(container).not.toHaveTextContent('/api/files/');
+        fireEvent.click(link);
+        expect(openExternal).toHaveBeenCalledWith(artifactPath);
+      } finally {
+        window.appConfig = originalAppConfig;
+        window.electron.openExternal = originalOpenExternal;
+      }
+    });
   });
 
   describe('HTML Security Integration', () => {
