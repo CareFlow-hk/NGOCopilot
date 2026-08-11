@@ -9,7 +9,7 @@ Render Static Site (React/Vite)
 Railway API/ACP service (one replica)
         |-- Railway PostgreSQL: accounts, chat history, jobs, object metadata
         |-- Railway Volume at /data: active tenant write-back cache
-        `-- Private S3/R2 bucket: uploads, artifacts, and runtime snapshots
+        `-- Private Google Cloud Storage bucket: uploads, artifacts, and runtime snapshots
 ```
 
 PostgreSQL is the product index and ownership boundary. The attached volume is
@@ -27,13 +27,14 @@ changing cloud resources:
 ```sh
 railway whoami
 render whoami
-aws sts get-caller-identity
+gcloud auth list --filter=status:ACTIVE --format='value(account)'
+gcloud config get-value project
 ```
 
-Do not create or deploy AWS root access keys. The Railway service needs a new
-least-privilege IAM identity restricted to the one NGOPilot bucket, or equivalent
-R2 credentials restricted to that bucket. Keep all credentials in provider secret
-stores, never in Git, build arguments, Render variables, URLs, or logs.
+Do not deploy a human Google account credential. The Railway service needs a
+dedicated least-privilege Google service account restricted to the one NGOPilot
+GCS bucket. Keep its JSON credential only in Railway's secret store, never in Git,
+build arguments, Render variables, URLs, or logs.
 
 ## Environment Contract
 
@@ -59,11 +60,9 @@ placeholders and must not be deployed literally.
 | `REGISTRATION_ENABLED` | Yes | `true` for initial signup, then set policy explicitly |
 | `MAX_UPLOAD_BYTES` | Yes | Positive integer; `26214400` is 25 MiB |
 | `UPLOAD_RESOLVE_TIMEOUT_SECONDS` | No | Seconds to wait for a staged upload; `30` is the default |
-| `S3_BUCKET` | Yes | Private bucket name |
-| `S3_REGION` | Yes | Bucket region |
-| `S3_ENDPOINT_URL` | R2 only | R2 S3 endpoint; leave empty for AWS S3 |
-| `AWS_ACCESS_KEY_ID` | Yes | Least-privilege bucket credential; secret |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Least-privilege bucket credential; secret |
+| `GCS_BUCKET` | Yes | Private Google Cloud Storage bucket name |
+| `GCP_PROJECT_ID` | Yes | Project that owns the bucket and service account |
+| `GCP_SERVICE_ACCOUNT_JSON` | Yes | Single-line JSON credential for the bucket-scoped Railway service account; secret |
 | `NGOPILOT_BIN` | Yes | Installed ACP executable; default `ngopilot` |
 | `NGOPILOT_MCP_BIN` | Yes | Installed MCP executable; default `ngopilot-mcp` |
 | `NGOPILOT_MCP_SHARED_STATE_DIR` | Yes | Exactly `/opt/ngopilot/shared`; immutable and prebuilt into the image |
@@ -78,7 +77,7 @@ placeholders and must not be deployed literally.
   tenants/<user_uuid>/
     goose/       # restored ACP session/config cache
     workflow/    # restored MCP/SQLite/job cache
-    uploads/     # restored or newly staged S3 inputs
+    uploads/     # restored or newly staged GCS inputs
     tmp/         # never snapshotted; discarded with the tenant cache
 ```
 
@@ -98,7 +97,7 @@ cache restore recreates those links from the running image revision.
 | `VITE_GOOSE_DEFAULT_PROVIDER` | `openrouter` |
 | `VITE_GOOSE_DEFAULT_MODEL` | `moonshotai/kimi-k2.6` |
 
-No model, database, AWS, ACP, or object-store secret belongs in Render. Vite
+No model, database, Google Cloud, ACP, or object-store secret belongs in Render. Vite
 variables are public at build time.
 
 ## PostgreSQL
@@ -145,7 +144,7 @@ Schema ownership is intentionally small:
 - `chat_sessions` maps one user to an internal ACP session;
 - `messages` retains bounded structured ACP content, not flattened text;
 - `jobs` keeps a bounded public result plus the native reference needed to resume;
-- `storage_objects` records private S3/R2 objects and their root-relative cache paths.
+- `storage_objects` records private GCS objects and their root-relative cache paths.
 
 Native CareFlow and Roster tables remain authoritative for their domain rules.
 Copying their large documents into PostgreSQL messages or job history is expressly
@@ -153,9 +152,13 @@ out of scope.
 
 ## Private Object Storage
 
-Use one private S3 or R2 bucket with public access blocked. Enable encryption at
-rest (`SSE-S3`, `SSE-KMS`, or the R2 equivalent) and TLS-only access. Grant the
-Railway identity only the object actions and prefixes the API uses.
+Use one private Google Cloud Storage bucket with uniform bucket-level access,
+public access prevention enforced, object versioning enabled, and Google-managed
+server-side encryption. Disable GCS soft delete because NGOPilot explicitly removes
+every retained generation during hard purge; recovery is provided by versioning
+and the documented backup policy. Grant the Railway service account only
+`roles/storage.objectAdmin` on that bucket. The gateway uses native GCS APIs and
+V4 signed URLs over TLS and never exposes service credentials to the browser.
 
 Use opaque keys without names, emails, or document text:
 
@@ -179,11 +182,11 @@ the exact Render origin and the required methods/headers. Keep signed URLs
 short-lived and generate them on demand; never persist signed URLs.
 
 Record byte size and lowercase SHA-256 after the API has verified the stored
-object. Do not use an S3 `ETag` as a content hash because multipart ETags are not
+object. Do not use a GCS `ETag` as a content hash because it is not the recorded
 SHA-256. A `storage_objects` row may enter `ready` only after the object key,
 checksum, size, and verification time are present.
 
-Object deletion is two-phase because PostgreSQL cannot delete S3 objects in the
+Object deletion is two-phase because PostgreSQL cannot delete GCS objects in the
 same transaction: mark the row deleting, remove the object and any versions, then
 mark/delete the row. Configure lifecycle cleanup for abandoned multipart uploads
 and stale pending uploads. If bucket versioning is enabled, transcript burn and
@@ -256,7 +259,7 @@ only for configured origins.
 ## Deployment Order
 
 1. Verify the three CLI identities, then create or select one private encrypted
-   S3/R2 bucket and its least-privilege service credential.
+   GCS bucket and its least-privilege Google service-account credential.
 2. In Railway, create PostgreSQL and the API service, select
    `/deployment/railway.json`, attach a volume at `/data`, and set all Railway API
    variables except the final Render origin.
@@ -274,14 +277,14 @@ pass. When adding custom domains, update `PUBLIC_API_URL`, `VITE_API_URL`, and
 
 ## Backup and Restore
 
-Railway PostgreSQL and S3/R2 are the durable recovery set. The Railway Volume is a
+Railway PostgreSQL and Google Cloud Storage are the durable recovery set. The Railway Volume is a
 write-back cache and must not be the only copy of a disconnected tenant's state.
 A PostgreSQL backup alone cannot resume CareFlow or Roster jobs.
 
 ### Backup
 
 1. Stop accepting new mutations and wait for active native workers to finish.
-2. Stop the tenant processes normally so each runtime snapshot commits to S3 and
+2. Stop the tenant processes normally so each runtime snapshot commits to GCS and
    its local cache is evicted. Do not copy live SQLite files without their WAL.
 3. Create a timestamped PostgreSQL custom-format dump with `pg_dump`.
 4. Retain every runtime snapshot and upload/artifact object referenced by the live
@@ -313,7 +316,7 @@ and every object-store version before the product calls the operation irreversib
 ### Restore
 
 1. Stop the API and attach an empty cache volume at the same `/data` mount.
-2. Restore PostgreSQL and the S3 object versions from the same recovery point.
+2. Restore PostgreSQL and the GCS object generations from the same recovery point.
 3. Start one API replica and let the gateway restore each tenant snapshot on demand.
 4. Run `PRAGMA integrity_check` on every restored SQLite database and
    `PRAGMA foreign_key_check` where foreign keys are enabled.
@@ -335,9 +338,9 @@ profile:
 - authenticated WSS reconnect using a fresh one-use ticket;
 - one complete CareFlow workflow and one complete Roster workflow;
 - upload size/type rejection and private artifact download authorization;
-- S3/R2 objects are not anonymously readable;
+- GCS objects are not anonymously readable;
 - a backend restart with an empty `/data` cache restores chat/native state and
-  artifact access from PostgreSQL plus S3/R2;
+  artifact access from PostgreSQL plus GCS;
 - migration version, PostgreSQL backup, object snapshot backup, and restore test
   are current.
 
@@ -353,8 +356,10 @@ WEB_URL=https://<render-static-site-domain>
 curl -fsS "$API_URL/healthz"
 curl -fsS "$API_URL/readyz"
 curl -fsSI "$WEB_URL/"
-aws s3api get-public-access-block --bucket '<private-bucket-name>'
-aws s3api get-bucket-encryption --bucket '<private-bucket-name>'
+gcloud storage buckets describe 'gs://<private-bucket-name>' \
+  --format='yaml(name,location,uniform_bucket_level_access,public_access_prevention,versioning_enabled,soft_delete_policy)'
+gcloud storage buckets get-iam-policy 'gs://<private-bucket-name>'
+gcloud storage ls --all-versions 'gs://<private-bucket-name>/**'
 ```
 
 Then create two disposable test accounts in a private shell, without printing

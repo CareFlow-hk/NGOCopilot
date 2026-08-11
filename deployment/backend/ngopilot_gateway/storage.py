@@ -1,4 +1,4 @@
-"""Private S3 persistence and safe tenant-local cache management."""
+"""Private GCS persistence and safe tenant-local cache management."""
 
 from __future__ import annotations
 
@@ -16,13 +16,11 @@ from urllib.parse import unquote, urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import aiofiles
-import boto3
-from botocore.config import Config as BotoConfig
-from botocore.exceptions import ClientError
 from fastapi import HTTPException, UploadFile, status
 
 from .config import Settings
 from .db import Database
+from .gcs_storage import GcsObjectStore
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ PLACEHOLDER_PATTERN = re.compile(
 SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
 TRAILING_PATH_PUNCTUATION = "),.;:!?"
 RUNTIME_CACHE_AREAS = ("goose", "workflow")
-RUNTIME_CACHE_MARKER = ".ngopilot-s3-cache"
+RUNTIME_CACHE_MARKER = ".ngopilot-cache-ready"
 RUNTIME_SNAPSHOT_VERSION = 1
 SNAPSHOT_TRANSFER_CONCURRENCY = 8
 
@@ -162,21 +160,22 @@ class StorageService:
         self._tasks: set[asyncio.Task[None]] = set()
         self._task_users: dict[asyncio.Task[None], UUID] = {}
         self._cache_locks: dict[UUID, asyncio.Lock] = {}
-        self._s3 = None
-        if settings.s3_configured:
-            self._s3 = boto3.client(
-                "s3",
-                region_name=settings.s3_region,
-                endpoint_url=settings.s3_endpoint_url or None,
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
-                config=BotoConfig(signature_version="s3v4"),
-            )
+        self._object_store = GcsObjectStore(settings) if settings.gcs_configured else None
 
     async def close(self) -> None:
         if not self._tasks:
             return
         await asyncio.gather(*list(self._tasks), return_exceptions=True)
+
+    async def health_check(self) -> bool:
+        if self._object_store is None:
+            return False
+        try:
+            await asyncio.to_thread(self._object_store.health_check)
+        except Exception as error:
+            logger.warning("GCS readiness check failed: %s", type(error).__name__)
+            return False
+        return True
 
     def _cache_lock(self, user_id: UUID) -> asyncio.Lock:
         lock = self._cache_locks.get(user_id)
@@ -192,7 +191,7 @@ class StorageService:
         placeholder: str,
         file: UploadFile,
     ) -> dict[str, Any]:
-        if self._s3 is None:
+        if self._object_store is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Object storage is not configured",
@@ -375,7 +374,7 @@ class StorageService:
             logger.error("Artifact mirror failed: %s", type(task.exception()).__name__)
 
     async def artifact_download_url(self, user_id: UUID, local_path: str) -> dict[str, Any]:
-        if self._s3 is None:
+        if self._object_store is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Object storage is not configured",
@@ -411,15 +410,11 @@ class StorageService:
 
         filename = safe_filename(row["filename"])
         url = await asyncio.to_thread(
-            self._s3.generate_presigned_url,
-            "get_object",
-            Params={
-                "Bucket": self.settings.s3_bucket,
-                "Key": row["object_key"],
-                "ResponseContentDisposition": f'attachment; filename="{filename}"',
-                "ResponseContentType": row["content_type"],
-            },
-            ExpiresIn=300,
+            self._object_store.sign_download,
+            row["object_key"],
+            filename,
+            row["content_type"],
+            300,
         )
         return {
             "url": url,
@@ -431,7 +426,7 @@ class StorageService:
         }
 
     async def _mirror_artifacts(self, user_id: UUID, payload: Any) -> None:
-        if self._s3 is None:
+        if self._object_store is None:
             return
         seen: set[Path] = set()
         raw_paths: set[str] = set()
@@ -500,7 +495,7 @@ class StorageService:
             )
 
     async def restore_tenant_cache(self, user_id: UUID) -> None:
-        if self._s3 is None:
+        if self._object_store is None:
             return
         async with self._cache_lock(user_id):
             tenant_root = self.settings.data_root / "tenants" / str(user_id)
@@ -548,7 +543,7 @@ class StorageService:
                 raise
 
     async def persist_and_evict_tenant_cache(self, user_id: UUID) -> None:
-        if self._s3 is None:
+        if self._object_store is None:
             return
         await self._wait_for_artifact_tasks(user_id)
         async with self._cache_lock(user_id):
@@ -556,6 +551,7 @@ class StorageService:
             if not tenant_root.is_dir():
                 return
 
+            await self._mirror_local_storage_objects(user_id)
             old_pointer = await self._snapshot_json(self._snapshot_pointer_key(user_id))
             old_snapshot_id = self._snapshot_id(old_pointer) if old_pointer is not None else None
             snapshot_id = str(uuid4())
@@ -581,7 +577,7 @@ class StorageService:
                 raise
 
             # Do not delete the new prefix if this call has an ambiguous network failure:
-            # S3 may have committed the pointer even when the response did not arrive.
+            # GCS may have committed the pointer even when the response did not arrive.
             await self._put_snapshot_json(
                 self._snapshot_pointer_key(user_id),
                 {
@@ -615,7 +611,7 @@ class StorageService:
                 )
 
     async def evict_stale_tenant_caches(self) -> None:
-        if self._s3 is None:
+        if self._object_store is None:
             return
         tenants_root = self.settings.data_root / "tenants"
         if not tenants_root.is_dir():
@@ -633,7 +629,7 @@ class StorageService:
     async def delete_session_objects(
         self, user_id: UUID, object_keys: Iterable[str]
     ) -> None:
-        if self._s3 is None:
+        if self._object_store is None:
             return
         allowed_prefixes = (
             f"tenants/{user_id}/uploads/",
@@ -646,7 +642,7 @@ class StorageService:
 
     async def purge_superseded_runtime_snapshots(self, user_id: UUID) -> None:
         """Remove every runtime snapshot/version except the current committed snapshot."""
-        if self._s3 is None:
+        if self._object_store is None:
             return
         pointer_key = self._snapshot_pointer_key(user_id)
         pointer = await self._snapshot_json(pointer_key)
@@ -655,43 +651,65 @@ class StorageService:
         snapshot_id = self._snapshot_id(pointer)
         current_prefix = f"tenants/{user_id}/runtime-snapshots/{snapshot_id}/"
         runtime_prefix = f"tenants/{user_id}/runtime-snapshots/"
-        assert self._s3 is not None
+        assert self._object_store is not None
+        generations = await asyncio.to_thread(
+            self._object_store.list_generations, runtime_prefix
+        )
+        obsolete = [
+            item
+            for item in generations
+            if not item.key.startswith(current_prefix)
+            and not (
+                item.key == pointer_key
+                and item.is_latest
+            )
+        ]
+        if obsolete:
+            await asyncio.to_thread(self._object_store.delete_generations, obsolete)
 
-        def delete() -> None:
-            key_marker: str | None = None
-            version_marker: str | None = None
-            while True:
-                params: dict[str, Any] = {
-                    "Bucket": self.settings.s3_bucket,
-                    "Prefix": runtime_prefix,
-                }
-                if key_marker is not None:
-                    params["KeyMarker"] = key_marker
-                if version_marker is not None:
-                    params["VersionIdMarker"] = version_marker
-                response = self._s3.list_object_versions(**params)
-                current_versions = response.get("Versions", [])
-                objects = [
-                    {"Key": item["Key"], "VersionId": item["VersionId"]}
-                    for item in current_versions + response.get("DeleteMarkers", [])
-                    if not item["Key"].startswith(current_prefix)
-                    and not (
-                        item["Key"] == pointer_key
-                        and item.get("IsLatest") is True
-                        and item in current_versions
-                    )
-                ]
-                if objects:
-                    self._s3.delete_objects(
-                        Bucket=self.settings.s3_bucket,
-                        Delete={"Objects": objects, "Quiet": True},
-                    )
-                if not response.get("IsTruncated"):
-                    break
-                key_marker = response.get("NextKeyMarker")
-                version_marker = response.get("NextVersionIdMarker")
-
-        await asyncio.to_thread(delete)
+    async def _mirror_local_storage_objects(self, user_id: UUID) -> None:
+        """Preserve verified local files before removing a tenant cache."""
+        assert self._object_store is not None
+        data_root = self.settings.data_root.resolve()
+        tenant_prefix = Path("tenants") / str(user_id)
+        for row in await self.db.ready_storage_objects_for_user(user_id):
+            local_path = row["local_path"]
+            object_key = row["object_key"]
+            content_type = row["content_type"]
+            size = row["size_bytes"]
+            digest = row["sha256"]
+            if (
+                not isinstance(local_path, str)
+                or not isinstance(object_key, str)
+                or not isinstance(content_type, str)
+                or not isinstance(size, int)
+                or size < 0
+                or not isinstance(digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            ):
+                raise RuntimeError("Stored object metadata is incomplete")
+            relative = Path(local_path)
+            if (
+                relative.is_absolute()
+                or ".." in relative.parts
+                or not relative.is_relative_to(tenant_prefix)
+                or relative == tenant_prefix
+            ):
+                raise RuntimeError("Stored object cache path is invalid")
+            if await asyncio.to_thread(
+                self._object_store.object_matches, object_key, size, digest
+            ):
+                continue
+            path = data_root / relative
+            if not path.is_file():
+                logger.warning("Local copy is unavailable for GCS object %s", object_key)
+                continue
+            if _has_symlink_component(data_root, relative):
+                raise RuntimeError("Stored object cache path contains a symbolic link")
+            actual_digest, actual_size = await asyncio.to_thread(self._digest_file, path)
+            if actual_size != size or actual_digest != digest:
+                raise RuntimeError("Local object failed integrity verification before GCS upload")
+            await self._upload_private(path, object_key, content_type, digest)
 
     async def _wait_for_artifact_tasks(self, user_id: UUID) -> None:
         tasks = [task for task, owner in self._task_users.items() if owner == user_id]
@@ -814,19 +832,18 @@ class StorageService:
     async def _download_verified(
         self, object_key: str, destination: Path, size: int, digest: str
     ) -> None:
-        assert self._s3 is not None
+        assert self._object_store is not None
         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         temporary = destination.with_name(f".{destination.name}.{uuid4()}.part")
         try:
             await asyncio.to_thread(
-                self._s3.download_file,
-                self.settings.s3_bucket,
+                self._object_store.download_file,
                 object_key,
-                str(temporary),
+                temporary,
             )
             actual_digest, actual_size = await asyncio.to_thread(self._digest_file, temporary)
             if actual_size != size or actual_digest != digest:
-                raise RuntimeError("Restored S3 object failed integrity verification")
+                raise RuntimeError("Restored GCS object failed integrity verification")
             temporary.replace(destination)
         finally:
             temporary.unlink(missing_ok=True)
@@ -846,40 +863,19 @@ class StorageService:
         return snapshot_id
 
     async def _snapshot_json(self, object_key: str) -> dict[str, Any] | None:
-        assert self._s3 is not None
-
-        def read() -> dict[str, Any] | None:
-            try:
-                response = self._s3.get_object(
-                    Bucket=self.settings.s3_bucket,
-                    Key=object_key,
-                )
-            except ClientError as error:
-                code = str(error.response.get("Error", {}).get("Code", ""))
-                if code in {"404", "NoSuchKey", "NotFound"}:
-                    return None
-                raise
-            value = json.loads(response["Body"].read())
-            if not isinstance(value, dict):
-                raise RuntimeError("S3 snapshot metadata is invalid")
-            return value
-
-        return await asyncio.to_thread(read)
+        assert self._object_store is not None
+        return await asyncio.to_thread(self._object_store.read_json, object_key)
 
     async def _put_snapshot_json(self, object_key: str, value: dict[str, Any]) -> None:
-        assert self._s3 is not None
-        body = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        assert self._object_store is not None
         await asyncio.to_thread(
-            self._s3.put_object,
-            Bucket=self.settings.s3_bucket,
-            Key=object_key,
-            Body=body,
-            ContentType="application/json",
-            ServerSideEncryption="AES256",
+            self._object_store.put_json,
+            object_key,
+            value,
         )
 
     async def _delete_snapshot_prefix(self, user_id: UUID, snapshot_id: str) -> None:
-        assert self._s3 is not None
+        assert self._object_store is not None
         prefix = f"tenants/{user_id}/runtime-snapshots/{snapshot_id}/"
         await self._delete_object_versions(prefix)
 
@@ -896,59 +892,31 @@ class StorageService:
         keep_latest_key: str | None = None,
         exact_key: str | None = None,
     ) -> None:
-        assert self._s3 is not None
-
-        def delete() -> None:
-            key_marker: str | None = None
-            version_marker: str | None = None
-            while True:
-                params: dict[str, Any] = {
-                    "Bucket": self.settings.s3_bucket,
-                    "Prefix": prefix,
-                }
-                if key_marker is not None:
-                    params["KeyMarker"] = key_marker
-                if version_marker is not None:
-                    params["VersionIdMarker"] = version_marker
-                response = self._s3.list_object_versions(**params)
-                versions = response.get("Versions", []) + response.get("DeleteMarkers", [])
-                objects = [
-                    {"Key": item["Key"], "VersionId": item["VersionId"]}
-                    for item in versions
-                    if (exact_key is None or item["Key"] == exact_key)
-                    and not (
-                        keep_latest_key is not None
-                        and item["Key"] == keep_latest_key
-                        and item.get("IsLatest") is True
-                        and item in response.get("Versions", [])
-                    )
-                ]
-                if objects:
-                    self._s3.delete_objects(
-                        Bucket=self.settings.s3_bucket,
-                        Delete={"Objects": objects, "Quiet": True},
-                    )
-                if not response.get("IsTruncated"):
-                    break
-                key_marker = response.get("NextKeyMarker")
-                version_marker = response.get("NextVersionIdMarker")
-
-        await asyncio.to_thread(delete)
+        assert self._object_store is not None
+        generations = await asyncio.to_thread(self._object_store.list_generations, prefix)
+        obsolete = [
+            item
+            for item in generations
+            if (exact_key is None or item.key == exact_key)
+            and not (
+                keep_latest_key is not None
+                and item.key == keep_latest_key
+                and item.is_latest
+            )
+        ]
+        if obsolete:
+            await asyncio.to_thread(self._object_store.delete_generations, obsolete)
 
     async def _upload_private(
         self, path: Path, object_key: str, content_type: str, digest: str
     ) -> None:
-        assert self._s3 is not None
+        assert self._object_store is not None
         await asyncio.to_thread(
-            self._s3.upload_file,
-            str(path),
-            self.settings.s3_bucket,
+            self._object_store.upload_file,
+            path,
             object_key,
-            ExtraArgs={
-                "ContentType": content_type,
-                "Metadata": {"sha256": digest},
-                "ServerSideEncryption": "AES256",
-            },
+            content_type,
+            digest,
         )
 
     @staticmethod

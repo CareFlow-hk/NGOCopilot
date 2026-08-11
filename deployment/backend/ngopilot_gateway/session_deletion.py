@@ -22,7 +22,7 @@ class SessionDeletionService:
 
     async def delete(self, user_id: UUID, agent_session_id: str) -> None:
         # Goose has already deleted its SQLite rows. Stop it before snapshotting so
-        # SQLite is closed and the replacement S3 snapshot is internally consistent.
+        # SQLite is closed and the replacement GCS snapshot is internally consistent.
         await self.processes.checkpoint(user_id)
         await self.storage.purge_superseded_runtime_snapshots(user_id)
 

@@ -37,9 +37,8 @@ The local deployment CLIs were authenticated on 2026-08-03:
 
 - Railway: `倪嘉辰（Wilson） <wilson1111223@gmail.com>`
 - Render: `Wilsonnijc@outlook.com`
-- Alibaba Cloud CLI `ngopilot` profile: International-site OAuth for account
-  `5523186429905031` (`wilsonnijc@outlook.com`), authenticated on 2026-08-11;
-  verified identity `acs:ram::5523186429905031:root` with type `Account`
+- Google Cloud: `Wilsonnijc@outlook.com`, project `double-scholar-487115-b1`
+  (project number `357688931985`), authenticated on 2026-08-11
 - AWS CLI `default`: account `106189426186`, currently
   `arn:aws:iam::106189426186:root`
 
@@ -51,23 +50,20 @@ railway whoami
 render whoami
 ```
 
-For Alibaba Cloud work, always use the International OAuth profile explicitly:
+For Google Cloud work, verify both the active account and project:
 
 ```sh
-aliyun <product> <operation> --profile ngopilot --region <target-region>
+gcloud auth list --filter=status:ACTIVE --format='value(account)'
+gcloud config get-value project
 ```
 
-The `ngopilot` profile uses OAuth Site Type `INTL` (`1`) and the normal Alibaba
-Cloud account, not the China site or a RAM user login. Its default region is
-intentionally unset until the OSS bucket region is selected; never assume a
-region from the account or local timezone.
-
-Alibaba Cloud OSS is the target for future object storage. Do not add new AWS/S3
-dependencies. Treat the existing production S3 configuration as legacy until an
-explicit migration replaces it, verifies OSS end to end, and removes it safely.
+Google Cloud Storage is NGOPilot's object storage. Do not add compatibility-layer
+or alternate cloud-provider storage dependencies or configuration. Use the native
+GCS adapter and verify GCS end to end before every storage-related production
+deployment.
 
 AWS is an optional legacy/decommissioning dependency. Do not require AWS
-authentication for Railway, Render, or Alibaba Cloud work. Run
+authentication for Railway, Render, or Google Cloud work. Run
 `aws sts get-caller-identity` only before explicit AWS verification or cleanup.
 
 The signed AWS CLI is installed at `~/.local/aws-cli` and exposed through
@@ -80,10 +76,10 @@ targets. Do not create root access keys, expose or copy its tokens, or treat thi
 authorization for unrelated account-wide changes. Prefer a least-privilege profile
 if one is configured later.
 
-Railway, Render, Alibaba Cloud, and AWS manage their credentials outside this
+Railway, Render, Google Cloud, and AWS manage their credentials outside this
 repository. Never copy access tokens, credential files, or device authorization
 codes into the repository, logs, deployment manifests, or chat output. If a
 verification command for a required deployment platform fails, run the
 corresponding interactive login flow with the user present. An expired optional
-AWS session must not block an otherwise independent Railway, Render, or Alibaba
+AWS session must not block an otherwise independent Railway, Render, or Google
 Cloud deployment.

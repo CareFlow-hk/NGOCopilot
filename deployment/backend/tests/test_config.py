@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -24,6 +26,52 @@ def test_production_requires_cloud_secrets() -> None:
             app_env="production",
             public_api_url="https://api.example.test",
             allowed_origins="https://app.example.test",
+        )
+
+
+def service_account_json(project_id: str = "ngopilot-project") -> str:
+    return json.dumps(
+        {
+            "type": "service_account",
+            "project_id": project_id,
+            "private_key": "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n",
+            "client_email": f"storage@{project_id}.iam.gserviceaccount.com",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    )
+
+
+def test_production_accepts_complete_gcs_configuration() -> None:
+    settings = Settings(
+        app_env="production",
+        public_api_url="https://api.example.test",
+        allowed_origins="https://app.example.test",
+        database_url="postgresql://example.test/ngopilot",
+        openrouter_api_key="model-secret",
+        gcs_bucket="ngopilot-prod-example",
+        gcp_project_id="ngopilot-project",
+        gcp_service_account_json=service_account_json(),
+    )
+
+    assert settings.gcs_configured is True
+
+
+def test_gcs_credentials_must_be_service_account_json() -> None:
+    with pytest.raises(ValidationError, match="service-account credential"):
+        Settings(app_env="test", gcp_service_account_json="{}")
+
+
+def test_gcs_credentials_must_match_project() -> None:
+    with pytest.raises(ValidationError, match="project_id must match"):
+        Settings(
+            app_env="production",
+            public_api_url="https://api.example.test",
+            allowed_origins="https://app.example.test",
+            database_url="postgresql://example.test/ngopilot",
+            openrouter_api_key="model-secret",
+            gcs_bucket="ngopilot-prod-example",
+            gcp_project_id="ngopilot-project",
+            gcp_service_account_json=service_account_json("another-project"),
         )
 
 

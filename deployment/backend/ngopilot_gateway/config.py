@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,11 +45,9 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
     upload_resolve_timeout_seconds: float = Field(default=30, ge=0, le=300)
-    s3_bucket: str = ""
-    s3_region: str = ""
-    s3_endpoint_url: str | None = None
-    aws_access_key_id: str = ""
-    aws_secret_access_key: str = ""
+    gcs_bucket: str = ""
+    gcp_project_id: str = ""
+    gcp_service_account_json: SecretStr = SecretStr("")
 
     @field_validator("data_root", "ngopilot_mcp_shared_state_dir")
     @classmethod
@@ -65,6 +66,45 @@ class Settings(BaseSettings):
         if parsed.query or parsed.fragment:
             raise ValueError("must not contain a query string or fragment")
         return value.rstrip("/")
+
+    @field_validator("gcs_bucket")
+    @classmethod
+    def valid_gcs_bucket(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]", value):
+            raise ValueError("must be a valid 3-63 character GCS bucket name")
+        return value
+
+    @field_validator("gcp_project_id")
+    @classmethod
+    def valid_gcp_project_id(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", value):
+            raise ValueError("must be a valid 6-30 character Google Cloud project ID")
+        return value
+
+    @field_validator("gcp_service_account_json")
+    @classmethod
+    def valid_service_account_json(cls, value: SecretStr) -> SecretStr:
+        raw = value.get_secret_value()
+        if not raw:
+            return value
+        try:
+            info = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ValueError("must contain valid JSON") from error
+        required = {"type", "project_id", "private_key", "client_email", "token_uri"}
+        if not isinstance(info, dict) or required - info.keys():
+            raise ValueError("must contain a complete Google service-account credential")
+        if info["type"] != "service_account":
+            raise ValueError("must be a Google service-account credential")
+        if not isinstance(info["private_key"], str) or not info["private_key"].startswith(
+            "-----BEGIN PRIVATE KEY-----"
+        ):
+            raise ValueError("must contain a service-account private key")
+        if not isinstance(info["client_email"], str) or not info["client_email"].endswith(
+            ".gserviceaccount.com"
+        ):
+            raise ValueError("must contain a service-account email")
+        return value
 
     @field_validator("app_env")
     @classmethod
@@ -101,17 +141,21 @@ class Settings(BaseSettings):
                 raise ValueError(f"ALLOWED_ORIGINS contains an invalid origin: {origin}")
 
         if self.app_env == "production":
+            service_account_json = self.gcp_service_account_json.get_secret_value()
             required = {
                 "DATABASE_URL": self.database_url,
                 "OPENROUTER_API_KEY": self.openrouter_api_key,
-                "S3_BUCKET": self.s3_bucket,
-                "S3_REGION": self.s3_region,
-                "AWS_ACCESS_KEY_ID": self.aws_access_key_id,
-                "AWS_SECRET_ACCESS_KEY": self.aws_secret_access_key,
+                "GCS_BUCKET": self.gcs_bucket,
+                "GCP_PROJECT_ID": self.gcp_project_id,
+                "GCP_SERVICE_ACCOUNT_JSON": service_account_json,
             }
             missing = [name for name, value in required.items() if not value.strip()]
             if missing:
                 raise ValueError("missing production settings: " + ", ".join(missing))
+            if self.gcp_service_account_info["project_id"] != self.gcp_project_id:
+                raise ValueError(
+                    "GCP_SERVICE_ACCOUNT_JSON project_id must match GCP_PROJECT_ID"
+                )
             if self.goose_provider != "openrouter":
                 raise ValueError("GOOSE_PROVIDER must be openrouter in production")
             if self.goose_model != "moonshotai/kimi-k2.6":
@@ -130,13 +174,19 @@ class Settings(BaseSettings):
         return urlunsplit((scheme, parsed.netloc, path, f"ticket={ticket}", ""))
 
     @property
-    def s3_configured(self) -> bool:
+    def gcs_configured(self) -> bool:
         return bool(
-            self.s3_bucket
-            and self.s3_region
-            and self.aws_access_key_id
-            and self.aws_secret_access_key
+            self.gcs_bucket
+            and self.gcp_project_id
+            and self.gcp_service_account_json.get_secret_value()
         )
+
+    @property
+    def gcp_service_account_info(self) -> dict[str, Any]:
+        value = json.loads(self.gcp_service_account_json.get_secret_value())
+        if not isinstance(value, dict):
+            raise ValueError("GCP_SERVICE_ACCOUNT_JSON must contain a JSON object")
+        return value
 
 
 @lru_cache(maxsize=1)

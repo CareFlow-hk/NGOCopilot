@@ -130,12 +130,13 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
             "mcp_binary": executable_available(app_settings.ngopilot_mcp_bin),
             "shared_mcp_assets": request.app.state.processes.shared_assets_available(),
             "model_key": bool(app_settings.openrouter_api_key),
-            "object_storage": app_settings.s3_configured,
+            "object_storage": False,
         }
         try:
             checks["database"] = await request.app.state.db.ping()
         except Exception:
             checks["database"] = False
+        checks["object_storage"] = await request.app.state.storage.health_check()
         probe = app_settings.data_root / f".ready-{uuid4()}"
         try:
             with probe.open("x", encoding="utf-8") as stream:

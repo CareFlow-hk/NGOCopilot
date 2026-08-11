@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from botocore.exceptions import ClientError
 
+from ngopilot_gateway.gcs_storage import ObjectGeneration
 from ngopilot_gateway.storage import (
     RUNTIME_CACHE_MARKER,
     PlaceholderError,
@@ -29,13 +28,17 @@ class UploadDatabase:
 
 
 class CacheDatabase:
-    def __init__(self, uploads=None, artifact=None):
+    def __init__(self, uploads=None, artifact=None, storage_objects=None):
         self.uploads = uploads or []
         self.artifact = artifact
+        self.storage_objects = storage_objects
         self.artifacts: dict[str, dict[str, object]] = {}
 
     async def ready_uploads_for_user(self, user_id):
         return self.uploads
+
+    async def ready_storage_objects_for_user(self, user_id):
+        return self.uploads if self.storage_objects is None else self.storage_objects
 
     async def artifact_for_local_path(self, user_id, local_path):
         return self.artifact or self.artifacts.get(local_path)
@@ -44,58 +47,61 @@ class CacheDatabase:
         self.artifacts[str(values["local_path"])] = values
 
 
-class MemoryS3:
+class MemoryObjectStore:
     def __init__(self):
         self.objects: dict[str, bytes] = {}
-        self.presigned_request = None
+        self.metadata: dict[str, dict[str, str]] = {}
+        self.signed_request = None
 
-    def upload_file(self, filename, bucket, key, ExtraArgs=None):
-        self.objects[key] = Path(filename).read_bytes()
+    def upload_file(self, path, object_key, content_type, digest):
+        self.objects[object_key] = Path(path).read_bytes()
+        self.metadata[object_key] = {"content_type": content_type, "sha256": digest}
 
-    def download_file(self, bucket, key, filename):
-        Path(filename).write_bytes(self.objects[key])
+    def download_file(self, object_key, destination):
+        Path(destination).write_bytes(self.objects[object_key])
 
-    def put_object(self, *, Bucket, Key, Body, **kwargs):
-        self.objects[Key] = bytes(Body)
+    def object_matches(self, object_key, size, digest):
+        value = self.objects.get(object_key)
+        return (
+            value is not None
+            and len(value) == size
+            and self.metadata.get(object_key, {}).get("sha256") == digest
+        )
 
-    def get_object(self, *, Bucket, Key):
-        if Key not in self.objects:
-            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
-        return {"Body": io.BytesIO(self.objects[Key])}
+    def put_json(self, object_key, value):
+        self.objects[object_key] = json.dumps(
+            value, separators=(",", ":"), sort_keys=True
+        ).encode()
 
-    def list_objects_v2(self, *, Bucket, Prefix, ContinuationToken=None):
-        return {
-            "Contents": [{"Key": key} for key in self.objects if key.startswith(Prefix)],
-            "IsTruncated": False,
+    def read_json(self, object_key):
+        value = self.objects.get(object_key)
+        return json.loads(value) if value is not None else None
+
+    def list_generations(self, prefix):
+        return [
+            ObjectGeneration(key=key, generation=1, is_latest=True)
+            for key in self.objects
+            if key.startswith(prefix)
+        ]
+
+    def delete_generations(self, generations):
+        for item in generations:
+            self.objects.pop(item.key, None)
+            self.metadata.pop(item.key, None)
+
+    def sign_download(self, object_key, filename, content_type, expires_in):
+        self.signed_request = {
+            "object_key": object_key,
+            "filename": filename,
+            "content_type": content_type,
+            "expires_in": expires_in,
         }
-
-    def list_object_versions(self, *, Bucket, Prefix, **kwargs):
-        return {
-            "Versions": [
-                {"Key": key, "VersionId": "current", "IsLatest": True}
-                for key in self.objects
-                if key.startswith(Prefix)
-            ],
-            "DeleteMarkers": [],
-            "IsTruncated": False,
-        }
-
-    def delete_objects(self, *, Bucket, Delete):
-        for item in Delete["Objects"]:
-            self.objects.pop(item["Key"], None)
-
-    def generate_presigned_url(self, operation, *, Params, ExpiresIn):
-        self.presigned_request = {
-            "operation": operation,
-            "params": Params,
-            "expires_in": ExpiresIn,
-        }
-        return f"https://s3.example.test/{Params['Key']}?expires={ExpiresIn}"
+        return f"https://storage.googleapis.com/{object_key}?expires={expires_in}"
 
 
-class FailingUploadS3(MemoryS3):
-    def upload_file(self, filename, bucket, key, ExtraArgs=None):
-        raise RuntimeError("simulated S3 failure")
+class FailingUploadObjectStore(MemoryObjectStore):
+    def upload_file(self, path, object_key, content_type, digest):
+        raise RuntimeError("simulated GCS failure")
 
 
 def test_parse_placeholder_round_trip() -> None:
@@ -177,7 +183,7 @@ def test_tenant_file_rejects_symlink_escape(settings, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tenant_cache_round_trips_through_s3_and_removes_old_snapshot(settings) -> None:
+async def test_tenant_cache_round_trips_through_gcs_and_removes_old_snapshot(settings) -> None:
     user_id = uuid4()
     upload_id = uuid4()
     tenant = settings.data_root / "tenants" / str(user_id)
@@ -196,29 +202,34 @@ async def test_tenant_cache_round_trips_through_s3_and_removes_old_snapshot(sett
         path.write_bytes(content)
 
     upload_key = f"tenants/{user_id}/uploads/{upload_id}"
-    s3 = MemoryS3()
-    s3.objects[upload_key] = b"excel-input"
+    object_store = MemoryObjectStore()
+    object_store.objects[upload_key] = b"excel-input"
+    object_store.metadata[upload_key] = {
+        "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "sha256": StorageService._digest_file(upload_file)[0],
+    }
     database = CacheDatabase(
         uploads=[
             {
                 "local_path": upload_relative.as_posix(),
                 "object_key": upload_key,
+                "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "size_bytes": len(b"excel-input"),
                 "sha256": StorageService._digest_file(upload_file)[0],
             }
         ]
     )
     service = StorageService(settings, database)
-    service._s3 = s3
+    service._object_store = object_store
 
     await service.persist_and_evict_tenant_cache(user_id)
 
     assert not tenant.exists()
     pointer_key = service._snapshot_pointer_key(user_id)
-    first_pointer = json.loads(s3.objects[pointer_key])
+    first_pointer = json.loads(object_store.objects[pointer_key])
     first_prefix = f"tenants/{user_id}/runtime-snapshots/{first_pointer['snapshot_id']}/"
-    assert any(key.startswith(first_prefix) for key in s3.objects)
-    assert all(b"discard-me" not in value for value in s3.objects.values())
+    assert any(key.startswith(first_prefix) for key in object_store.objects)
+    assert all(b"discard-me" not in value for value in object_store.objects.values())
 
     await service.restore_tenant_cache(user_id)
 
@@ -231,9 +242,9 @@ async def test_tenant_cache_round_trips_through_s3_and_removes_old_snapshot(sett
     session_file.write_bytes(b"session-two")
     await service.persist_and_evict_tenant_cache(user_id)
 
-    second_pointer = json.loads(s3.objects[pointer_key])
+    second_pointer = json.loads(object_store.objects[pointer_key])
     assert second_pointer["snapshot_id"] != first_pointer["snapshot_id"]
-    assert not any(key.startswith(first_prefix) for key in s3.objects)
+    assert not any(key.startswith(first_prefix) for key in object_store.objects)
 
 
 @pytest.mark.asyncio
@@ -242,26 +253,26 @@ async def test_session_object_cleanup_removes_only_exact_owned_keys(settings) ->
     upload_key = f"tenants/{user_id}/uploads/upload-1"
     sibling_key = f"{upload_key}-sibling"
     service = StorageService(settings, CacheDatabase())
-    service._s3 = MemoryS3()
-    service._s3.objects.update({upload_key: b"delete", sibling_key: b"keep"})
+    service._object_store = MemoryObjectStore()
+    service._object_store.objects.update({upload_key: b"delete", sibling_key: b"keep"})
 
     await service.delete_session_objects(user_id, [upload_key])
 
-    assert upload_key not in service._s3.objects
-    assert service._s3.objects[sibling_key] == b"keep"
+    assert upload_key not in service._object_store.objects
+    assert service._object_store.objects[sibling_key] == b"keep"
 
 
 @pytest.mark.asyncio
 async def test_runtime_history_purge_keeps_only_current_snapshot(settings) -> None:
     user_id = uuid4()
     service = StorageService(settings, CacheDatabase())
-    service._s3 = MemoryS3()
+    service._object_store = MemoryObjectStore()
     pointer_key = service._snapshot_pointer_key(user_id)
     current_id = str(uuid4())
     old_id = str(uuid4())
     current_key = f"tenants/{user_id}/runtime-snapshots/{current_id}/manifest.json"
     old_key = f"tenants/{user_id}/runtime-snapshots/{old_id}/manifest.json"
-    service._s3.objects.update(
+    service._object_store.objects.update(
         {
             pointer_key: json.dumps(
                 {
@@ -277,9 +288,9 @@ async def test_runtime_history_purge_keeps_only_current_snapshot(settings) -> No
 
     await service.purge_superseded_runtime_snapshots(user_id)
 
-    assert pointer_key in service._s3.objects
-    assert current_key in service._s3.objects
-    assert old_key not in service._s3.objects
+    assert pointer_key in service._object_store.objects
+    assert current_key in service._object_store.objects
+    assert old_key not in service._object_store.objects
 
 
 @pytest.mark.asyncio
@@ -294,18 +305,18 @@ async def test_artifact_url_remains_available_after_local_cache_eviction(setting
         "sha256": "a" * 64,
     }
     service = StorageService(settings, CacheDatabase(artifact=artifact))
-    service._s3 = MemoryS3()
+    service._object_store = MemoryObjectStore()
 
     result = await service.artifact_download_url(user_id, relative.as_posix())
 
     assert result["filename"] == "roster.xlsx"
-    assert result["url"].startswith("https://s3.example.test/")
-    assert service._s3.presigned_request["params"]["ResponseContentDisposition"] == (
-        'attachment; filename="roster.xlsx"'
-    )
-    assert service._s3.presigned_request["params"]["ResponseContentType"] == artifact[
-        "content_type"
-    ]
+    assert result["url"].startswith("https://storage.googleapis.com/")
+    assert service._object_store.signed_request == {
+        "object_key": artifact["object_key"],
+        "filename": "roster.xlsx",
+        "content_type": artifact["content_type"],
+        "expires_in": 300,
+    }
 
 
 @pytest.mark.asyncio
@@ -317,7 +328,7 @@ async def test_agent_text_file_path_is_mirrored_before_immediate_download(settin
     path.write_bytes(b"generated workbook")
     database = CacheDatabase()
     service = StorageService(settings, database)
-    service._s3 = MemoryS3()
+    service._object_store = MemoryObjectStore()
 
     service.schedule_artifact_mirror(
         user_id,
@@ -336,7 +347,39 @@ async def test_agent_text_file_path_is_mirrored_before_immediate_download(settin
 
     assert result["filename"] == "generated report.xlsx"
     assert relative.as_posix() in database.artifacts
-    assert result["url"].startswith("https://s3.example.test/")
+    assert result["url"].startswith("https://storage.googleapis.com/")
+
+
+@pytest.mark.asyncio
+async def test_cache_eviction_mirrors_recoverable_local_object_to_gcs(settings) -> None:
+    user_id = uuid4()
+    relative = Path("tenants") / str(user_id) / "workflow" / "exports" / "care.xlsx"
+    path = settings.data_root / relative
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"recoverable workbook")
+    digest, size = StorageService._digest_file(path)
+    object_key = f"tenants/{user_id}/artifacts/recoverable"
+    database = CacheDatabase(
+        storage_objects=[
+            {
+                "kind": "artifact",
+                "local_path": relative.as_posix(),
+                "object_key": object_key,
+                "content_type": (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ),
+                "size_bytes": size,
+                "sha256": digest,
+            }
+        ]
+    )
+    service = StorageService(settings, database)
+    service._object_store = MemoryObjectStore()
+
+    await service.persist_and_evict_tenant_cache(user_id)
+
+    assert service._object_store.objects[object_key] == b"recoverable workbook"
+    assert not (settings.data_root / "tenants" / str(user_id)).exists()
 
 
 @pytest.mark.asyncio
@@ -347,10 +390,10 @@ async def test_failed_snapshot_retains_local_tenant_cache(settings) -> None:
     state_file.parent.mkdir(parents=True)
     state_file.write_bytes(b"must-survive")
     service = StorageService(settings, CacheDatabase())
-    service._s3 = FailingUploadS3()
+    service._object_store = FailingUploadObjectStore()
 
-    with pytest.raises(RuntimeError, match="simulated S3 failure"):
+    with pytest.raises(RuntimeError, match="simulated GCS failure"):
         await service.persist_and_evict_tenant_cache(user_id)
 
     assert state_file.read_bytes() == b"must-survive"
-    assert service._snapshot_pointer_key(user_id) not in service._s3.objects
+    assert service._snapshot_pointer_key(user_id) not in service._object_store.objects

@@ -477,6 +477,21 @@ class Database:
             user_id,
         )
 
+    async def ready_storage_objects_for_user(self, user_id: UUID) -> list[asyncpg.Record]:
+        return await self._pool().fetch(
+            """
+            SELECT kind, local_path, object_key, content_type, size_bytes, sha256
+            FROM storage_objects
+            WHERE user_id = $1
+              AND status = 'ready'
+              AND local_path IS NOT NULL
+              AND object_key IS NOT NULL
+              AND deleted_at IS NULL
+            ORDER BY created_at, id
+            """,
+            user_id,
+        )
+
     async def upsert_artifact(
         self,
         *,
