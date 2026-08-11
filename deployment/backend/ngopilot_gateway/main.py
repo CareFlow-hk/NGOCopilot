@@ -75,7 +75,12 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         app.state.storage = storage
         app.state.session_deletion = SessionDeletionService(db, processes, storage)
         try:
-            await storage.evict_stale_tenant_caches()
+            try:
+                await storage.evict_stale_tenant_caches()
+            except Exception:
+                logger.exception(
+                    "Failed to evict stale tenant caches during startup; continuing startup"
+                )
             yield
         finally:
             await processes.stop_all()
