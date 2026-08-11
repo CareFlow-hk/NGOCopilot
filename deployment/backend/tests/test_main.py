@@ -27,6 +27,10 @@ async def test_startup_continues_when_stale_cache_eviction_fails(
         async def close(self) -> None:
             events.append("database_closed")
 
+        async def deleting_chat_sessions(self):
+            events.append("pending_deletions_checked")
+            return []
+
     class FakeStorage:
         def __init__(self, app_settings, database) -> None:
             events.append("storage_created")
@@ -37,7 +41,8 @@ async def test_startup_continues_when_stale_cache_eviction_fails(
         async def persist_and_evict_tenant_cache(self, user_id) -> None:
             raise AssertionError("not called during application startup")
 
-        async def evict_stale_tenant_caches(self) -> None:
+        async def evict_stale_tenant_caches(self, excluded_user_ids) -> None:
+            assert excluded_user_ids == set()
             events.append("cache_eviction_attempted")
             raise RuntimeError("invalid object-storage credentials")
 
@@ -67,6 +72,7 @@ async def test_startup_continues_when_stale_cache_eviction_fails(
         "database_connected",
         "storage_created",
         "processes_created",
+        "pending_deletions_checked",
         "cache_eviction_attempted",
         "app_serving",
         "processes_stopped",

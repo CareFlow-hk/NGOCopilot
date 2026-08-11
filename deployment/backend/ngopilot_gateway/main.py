@@ -30,6 +30,7 @@ from .auth import router as auth_router
 from .config import Settings, get_settings
 from .db import Database, apply_migrations
 from .processes import TenantProcessManager, executable_available
+from .runtime_sessions import RuntimeSessionStore
 from .session_deletion import SessionDeletionService
 from .storage import StorageService
 
@@ -73,16 +74,24 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         app.state.db = db
         app.state.processes = processes
         app.state.storage = storage
-        app.state.session_deletion = SessionDeletionService(db, processes, storage)
+        session_deletion = SessionDeletionService(
+            db,
+            processes,
+            storage,
+            RuntimeSessionStore(app_settings.data_root),
+        )
+        app.state.session_deletion = session_deletion
         try:
+            pending_deletion_users = await session_deletion.resume_pending()
             try:
-                await storage.evict_stale_tenant_caches()
+                await storage.evict_stale_tenant_caches(pending_deletion_users)
             except Exception:
                 logger.exception(
                     "Failed to evict stale tenant caches during startup; continuing startup"
                 )
             yield
         finally:
+            await session_deletion.close()
             await processes.stop_all()
             await storage.close()
             await db.close()

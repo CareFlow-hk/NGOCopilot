@@ -144,7 +144,9 @@ Schema ownership is intentionally small:
 - `chat_sessions` maps one user to an internal ACP session;
 - `messages` retains bounded structured ACP content, not flattened text;
 - `jobs` keeps a bounded public result plus the native reference needed to resume;
-- `storage_objects` records private GCS objects and their root-relative cache paths.
+- `storage_objects` records private GCS objects and their root-relative cache paths;
+- `session_storage_objects` links those objects to every chat that references them,
+  so deleting one chat cannot purge a file still used by another.
 
 Native CareFlow and Roster tables remain authoritative for their domain rules.
 Copying their large documents into PostgreSQL messages or job history is expressly
@@ -192,6 +194,13 @@ mark/delete the row. Configure lifecycle cleanup for abandoned multipart uploads
 and stale pending uploads. If bucket versioning is enabled, transcript burn and
 account purge must delete every retained version or must not claim irreversible
 erasure.
+
+Chat deletion follows the same durable boundary. The gateway marks the owned chat
+`deleting`, stops its tenant process, removes exclusively linked local files before
+committing the replacement runtime snapshot, deletes every retained GCS generation,
+then hard-deletes the PostgreSQL chat, messages, jobs, exclusive object metadata,
+and link rows. Shared objects survive until their last session link is removed.
+Interrupted deletion remains hidden and is retried in-process and again on startup.
 
 ## Railway API Service
 

@@ -9,7 +9,7 @@ import logging
 import mimetypes
 import re
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import unquote, urlsplit
@@ -110,6 +110,22 @@ def tenant_relative_path(
     ):
         raise PlaceholderError("Stored tenant path is invalid")
     return relative
+
+
+def tenant_owned_path(data_root: Path, user_id: UUID, local_path: str) -> Path:
+    relative = Path(local_path)
+    tenant_relative = Path("tenants") / str(user_id)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or not relative.is_relative_to(tenant_relative)
+        or relative == tenant_relative
+    ):
+        raise PlaceholderError("Stored session path is outside the tenant directory")
+    data_root_resolved = data_root.resolve()
+    if _has_symlink_component(data_root_resolved, relative):
+        raise PlaceholderError("Stored session path contains a symbolic link")
+    return data_root_resolved / relative
 
 
 def runtime_relative_path(value: str) -> Path:
@@ -610,9 +626,12 @@ class StorageService:
                     user_id,
                 )
 
-    async def evict_stale_tenant_caches(self) -> None:
+    async def evict_stale_tenant_caches(
+        self, excluded_user_ids: set[UUID] | None = None
+    ) -> None:
         if self._object_store is None:
             return
+        excluded = excluded_user_ids or set()
         tenants_root = self.settings.data_root / "tenants"
         if not tenants_root.is_dir():
             return
@@ -624,21 +643,69 @@ class StorageService:
             except ValueError:
                 logger.warning("Ignoring unexpected data-root directory: %s", path.name)
                 continue
+            if user_id in excluded:
+                continue
             await self.persist_and_evict_tenant_cache(user_id)
 
     async def delete_session_objects(
-        self, user_id: UUID, object_keys: Iterable[str]
+        self, user_id: UUID, objects: Iterable[Mapping[str, Any]]
     ) -> None:
+        items = list(objects)
+        await self.delete_session_local_objects(user_id, items)
+        await self.delete_session_object_versions(user_id, items)
+
+    async def delete_session_local_objects(
+        self, user_id: UUID, objects: Iterable[Mapping[str, Any]]
+    ) -> None:
+        local_paths: set[str] = set()
+        for item in objects:
+            local_path = item.get("local_path")
+            if local_path is not None:
+                if not isinstance(local_path, str):
+                    raise RuntimeError("Session local path is invalid")
+                local_paths.add(local_path)
+        await self._delete_session_local_files(user_id, local_paths)
+
+    async def delete_session_object_versions(
+        self, user_id: UUID, objects: Iterable[Mapping[str, Any]]
+    ) -> None:
+        object_keys: set[str] = set()
+        for item in objects:
+            object_key = item.get("object_key")
+            if object_key is not None:
+                if not isinstance(object_key, str):
+                    raise RuntimeError("Session object key is invalid")
+                object_keys.add(object_key)
+
         if self._object_store is None:
             return
         allowed_prefixes = (
             f"tenants/{user_id}/uploads/",
             f"tenants/{user_id}/artifacts/",
         )
-        for object_key in sorted(set(object_keys)):
+        for object_key in sorted(object_keys):
             if not object_key.startswith(allowed_prefixes):
                 raise RuntimeError("Session object key is outside the tenant storage prefixes")
             await self._delete_object_versions(object_key, exact_key=object_key)
+
+    async def _delete_session_local_files(self, user_id: UUID, local_paths: Iterable[str]) -> None:
+        tenant_root = (self.settings.data_root / "tenants" / str(user_id)).resolve()
+        async with self._cache_lock(user_id):
+            for local_path in sorted(set(local_paths)):
+                path = tenant_owned_path(self.settings.data_root, user_id, local_path)
+                if path.is_symlink():
+                    raise RuntimeError("Session local path is a symbolic link")
+                if path.exists() and not path.is_file():
+                    raise RuntimeError("Session local path is not a file")
+                path.unlink(missing_ok=True)
+
+                parent = path.parent
+                while parent != tenant_root and parent.is_relative_to(tenant_root):
+                    try:
+                        parent.rmdir()
+                    except (FileNotFoundError, OSError):
+                        break
+                    parent = parent.parent
 
     async def purge_superseded_runtime_snapshots(self, user_id: UUID) -> None:
         """Remove every runtime snapshot/version except the current committed snapshot."""

@@ -252,14 +252,66 @@ async def test_session_object_cleanup_removes_only_exact_owned_keys(settings) ->
     user_id = uuid4()
     upload_key = f"tenants/{user_id}/uploads/upload-1"
     sibling_key = f"{upload_key}-sibling"
+    relative = Path("tenants") / str(user_id) / "uploads" / "upload-1" / "source.xlsx"
+    local_file = settings.data_root / relative
+    local_file.parent.mkdir(parents=True)
+    local_file.write_bytes(b"delete locally")
     service = StorageService(settings, CacheDatabase())
     service._object_store = MemoryObjectStore()
     service._object_store.objects.update({upload_key: b"delete", sibling_key: b"keep"})
 
-    await service.delete_session_objects(user_id, [upload_key])
+    await service.delete_session_objects(
+        user_id,
+        [{"object_key": upload_key, "local_path": relative.as_posix()}],
+    )
 
+    assert not local_file.exists()
     assert upload_key not in service._object_store.objects
     assert service._object_store.objects[sibling_key] == b"keep"
+
+
+@pytest.mark.asyncio
+async def test_session_object_cleanup_rejects_another_tenants_local_path(settings) -> None:
+    user_id = uuid4()
+    service = StorageService(settings, CacheDatabase())
+
+    with pytest.raises(PlaceholderError, match="outside the tenant"):
+        await service.delete_session_objects(
+            user_id,
+            [
+                {
+                    "object_key": None,
+                    "local_path": f"tenants/{uuid4()}/workflow/private.xlsx",
+                }
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_deleted_artifact_is_excluded_from_replacement_runtime_snapshot(settings) -> None:
+    user_id = uuid4()
+    tenant = settings.data_root / "tenants" / str(user_id)
+    artifact_relative = Path("tenants") / str(user_id) / "workflow" / "deleted.xlsx"
+    artifact = settings.data_root / artifact_relative
+    retained = tenant / "workflow" / "jobs.sqlite3"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"deleted artifact bytes")
+    retained.write_bytes(b"retained workflow state")
+    service = StorageService(settings, CacheDatabase())
+    service._object_store = MemoryObjectStore()
+
+    await service.delete_session_local_objects(
+        user_id,
+        [{"object_key": None, "local_path": artifact_relative.as_posix()}],
+    )
+    await service.persist_and_evict_tenant_cache(user_id)
+
+    assert all(
+        b"deleted artifact bytes" not in body for body in service._object_store.objects.values()
+    )
+    assert any(
+        b"retained workflow state" == body for body in service._object_store.objects.values()
+    )
 
 
 @pytest.mark.asyncio
@@ -397,3 +449,22 @@ async def test_failed_snapshot_retains_local_tenant_cache(settings) -> None:
 
     assert state_file.read_bytes() == b"must-survive"
     assert service._snapshot_pointer_key(user_id) not in service._object_store.objects
+
+
+@pytest.mark.asyncio
+async def test_stale_cache_eviction_skips_tenants_with_pending_deletions(settings) -> None:
+    pending_user = uuid4()
+    ready_user = uuid4()
+    pending_file = settings.data_root / "tenants" / str(pending_user) / "workflow" / "state.db"
+    ready_file = settings.data_root / "tenants" / str(ready_user) / "workflow" / "state.db"
+    pending_file.parent.mkdir(parents=True)
+    ready_file.parent.mkdir(parents=True)
+    pending_file.write_bytes(b"pending deletion")
+    ready_file.write_bytes(b"ready to evict")
+    service = StorageService(settings, CacheDatabase())
+    service._object_store = MemoryObjectStore()
+
+    await service.evict_stale_tenant_caches({pending_user})
+
+    assert pending_file.read_bytes() == b"pending deletion"
+    assert not ready_file.parent.parent.exists()

@@ -74,7 +74,7 @@ const i18n = defineMessages({
   noMatchingDesc: { id: 'sessions.search.noResultsDesc', defaultMessage: 'Try adjusting your search terms' },
   loadingMore: { id: 'sessions.loadingMore', defaultMessage: 'Loading more sessions...' },
   deleteTitle: { id: 'sessions.delete.title', defaultMessage: 'Delete Session' },
-  deleteMessage: { id: 'sessions.delete.message', defaultMessage: 'Are you sure you want to delete the session "{name}"? This action cannot be undone.' },
+  deleteMessage: { id: 'sessions.delete.message', defaultMessage: 'Delete the session "{name}" and its uploaded and generated files? This action cannot be undone.' },
   duplicateSuccess: { id: 'sessions.toast.duplicated', defaultMessage: 'Session "{name}" duplicated successfully' },
   duplicateFailed: { id: 'sessions.toast.duplicateFailed', defaultMessage: 'Failed to duplicate session: {error}' },
   deleteSuccess: { id: 'sessions.toast.deleted', defaultMessage: 'Session deleted successfully' },
@@ -252,6 +252,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     // Delete confirmation modal state
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<SessionListItem | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const [showImportLinkModal, setShowImportLinkModal] = useState(false);
     const [nostrImportLink, setNostrImportLink] = useState('');
@@ -470,12 +471,11 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     );
 
     const handleConfirmDelete = useCallback(async () => {
-      if (!sessionToDelete) return;
+      if (!sessionToDelete || isDeleting) return;
 
-      setShowDeleteConfirmation(false);
       const sessionToDeleteId = sessionToDelete.id;
       const sessionName = sessionToDelete.name;
-      setSessionToDelete(null);
+      setIsDeleting(true);
 
       try {
         await acpDeleteSession(sessionToDeleteId);
@@ -486,17 +486,22 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         cancelAcpPermissionRequestsForSession(sessionToDeleteId);
         cancelAcpElicitationRequestsForSession(sessionToDeleteId);
         acpChatSessionActions.deleteSnapshot(sessionToDeleteId);
+        setShowDeleteConfirmation(false);
+        setSessionToDelete(null);
+        await loadSessions();
       } catch (error) {
         console.error('Error deleting session:', error);
         toast.error(intl.formatMessage(i18n.deleteFailed, { name: sessionName, error: errorMessage(error, 'Unknown error') }));
+      } finally {
+        setIsDeleting(false);
       }
-      await loadSessions();
-    }, [sessionToDelete, loadSessions, intl]);
+    }, [sessionToDelete, isDeleting, loadSessions, intl]);
 
     const handleCancelDelete = useCallback(() => {
+      if (isDeleting) return;
       setShowDeleteConfirmation(false);
       setSessionToDelete(null);
-    }, []);
+    }, [isDeleting]);
 
     const handleExportSession = useCallback(async (session: SessionListItem, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -1087,6 +1092,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           confirmLabel={intl.formatMessage(i18n.deleteTitle)}
           cancelLabel={intl.formatMessage(i18n.cancel)}
           confirmVariant="destructive"
+          isSubmitting={isDeleting}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
         />

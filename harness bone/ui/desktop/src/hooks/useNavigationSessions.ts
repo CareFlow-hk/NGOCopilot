@@ -150,6 +150,9 @@ export function useNavigationSessions() {
       if (lastSessionIdRef.current === sessionId) {
         lastSessionIdRef.current = null;
       }
+      if (currentSessionId === sessionId) {
+        navigate('/');
+      }
       const version = ++fetchVersion;
       acpListRecentSessions(MAX_RECENT_SESSIONS)
         .then((sessions) => {
@@ -180,7 +183,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
     };
-  }, []);
+  }, [currentSessionId, navigate]);
 
   const handleNavClick = useCallback(
     (path: string) => {

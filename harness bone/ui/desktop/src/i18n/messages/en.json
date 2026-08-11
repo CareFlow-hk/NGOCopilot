@@ -3762,7 +3762,7 @@
     "defaultMessage": "Close"
   },
   "sessions.delete.message": {
-    "defaultMessage": "Are you sure you want to delete the session \"{name}\"? This action cannot be undone."
+    "defaultMessage": "Delete the session \"{name}\" and its uploaded and generated files? This action cannot be undone."
   },
   "sessions.delete.title": {
     "defaultMessage": "Delete Session"

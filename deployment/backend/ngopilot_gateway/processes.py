@@ -133,12 +133,31 @@ class TenantProcessManager:
                 name=f"ngopilot-idle-{user_id}",
             )
 
-    async def checkpoint(self, user_id: UUID) -> None:
+    async def checkpoint(
+        self,
+        user_id: UUID,
+        *,
+        before_evict: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         """Stop a tenant now so its closed databases can be safely snapshotted."""
         async with self._lock(user_id):
             managed = self._processes.pop(user_id, None)
             if managed is not None:
-                await self._stop(managed, strict_cache=True)
+                if before_evict is None:
+                    await self._stop(managed, strict_cache=True)
+                else:
+                    await self._stop(
+                        managed,
+                        strict_cache=True,
+                        before_evict=before_evict,
+                    )
+            else:
+                # A previous checkpoint may have stopped the process but retained
+                # local state after a failed snapshot. Persist that state on retry.
+                if before_evict is not None:
+                    await before_evict()
+                if self._evict_cache is not None:
+                    await self._evict_cache(user_id)
 
     async def _stop_after_idle(self, user_id: UUID, expected: ManagedProcess) -> None:
         try:
@@ -351,7 +370,13 @@ class TenantProcessManager:
         except asyncio.CancelledError:
             return
 
-    async def _stop(self, managed: ManagedProcess, *, strict_cache: bool = False) -> None:
+    async def _stop(
+        self,
+        managed: ManagedProcess,
+        *,
+        strict_cache: bool = False,
+        before_evict: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         if managed.idle_task is not None and managed.idle_task is not asyncio.current_task():
             managed.idle_task.cancel()
             managed.idle_task = None
@@ -367,6 +392,8 @@ class TenantProcessManager:
             await asyncio.gather(managed.stderr_task, return_exceptions=True)
             managed.stderr_task = None
         logger.info("Stopped tenant ACP process for user %s", managed.user_id)
+        if before_evict is not None:
+            await before_evict()
         if self._evict_cache is not None:
             try:
                 await self._evict_cache(managed.user_id)

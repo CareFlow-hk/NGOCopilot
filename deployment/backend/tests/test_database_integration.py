@@ -18,7 +18,7 @@ DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 async def test_migration_auth_ticket_and_chat_projection() -> None:
     assert DATABASE_URL is not None
     migrations = Path(__file__).resolve().parents[1] / "ngopilot_gateway" / "migrations"
-    assert await apply_migrations(DATABASE_URL, migrations) == [1]
+    assert await apply_migrations(DATABASE_URL, migrations) == [1, 2]
     assert await apply_migrations(DATABASE_URL, migrations) == []
 
     settings = Settings(
@@ -43,8 +43,11 @@ async def test_migration_auth_ticket_and_chat_projection() -> None:
         assert await database.consume_ws_ticket(ticket) is not None
         assert await database.consume_ws_ticket(ticket) is None
 
-        await database.upsert_chat_session(
+        first_session = await database.upsert_chat_session(
             user["id"], "agent-session-1", "moonshotai/kimi-k2.6"
+        )
+        second_session = await database.upsert_chat_session(
+            user["id"], "agent-session-2", "moonshotai/kimi-k2.6"
         )
         await database.record_message(
             user["id"], "agent-session-1", "user", "prompt", [{"text": "Hello"}]
@@ -54,6 +57,36 @@ async def test_migration_auth_ticket_and_chat_projection() -> None:
         )
         assert count == 1
 
+        object_id = uuid4()
+        await database._pool().execute(
+            """
+            INSERT INTO storage_objects (
+                id, user_id, kind, filename, content_type, size_bytes, sha256,
+                local_path, object_key, status, verified_at
+            ) VALUES (
+                $1, $2, 'artifact', 'shared.xlsx', 'application/octet-stream',
+                1, $3, $4, $5, 'ready', now()
+            )
+            """,
+            object_id,
+            user["id"],
+            "a" * 64,
+            f"tenants/{user['id']}/workflow/shared.xlsx",
+            f"tenants/{user['id']}/artifacts/{object_id}",
+        )
+        await database._pool().executemany(
+            """
+            INSERT INTO session_storage_objects (user_id, session_id, storage_object_id)
+            VALUES ($1, $2, $3)
+            """,
+            [
+                (user["id"], first_session["id"], object_id),
+                (user["id"], second_session["id"], object_id),
+            ],
+        )
+
+        assert await database.session_storage_objects(user["id"], "agent-session-1") == []
+
         assert await database.delete_chat_session(user["id"], "agent-session-1") is True
         remaining = await database._pool().fetchval(
             "SELECT count(*) FROM chat_sessions WHERE user_id = $1", user["id"]
@@ -61,7 +94,47 @@ async def test_migration_auth_ticket_and_chat_projection() -> None:
         messages = await database._pool().fetchval(
             "SELECT count(*) FROM messages WHERE user_id = $1", user["id"]
         )
-        assert remaining == 0
+        shared_objects = await database._pool().fetchval(
+            "SELECT count(*) FROM storage_objects WHERE id = $1", object_id
+        )
+        assert remaining == 1
         assert messages == 0
+        assert shared_objects == 1
+
+        assert len(await database.session_storage_objects(user["id"], "agent-session-2")) == 1
+        await database.upsert_job(
+            user["id"],
+            "agent-session-2",
+            "job-session-2",
+            "careflow",
+            {"status": "completed"},
+        )
+        job_artifact_id = uuid4()
+        await database.upsert_artifact(
+            artifact_id=job_artifact_id,
+            user_id=user["id"],
+            job_id="job-session-2",
+            agent_session_id=None,
+            filename="job-only.xlsx",
+            content_type="application/octet-stream",
+            size_bytes=1,
+            sha256="b" * 64,
+            local_path=f"tenants/{user['id']}/workflow/job-only.xlsx",
+            object_key=f"tenants/{user['id']}/artifacts/{job_artifact_id}",
+        )
+        assert len(await database.session_storage_objects(user["id"], "agent-session-2")) == 2
+        assert await database.delete_chat_session(user["id"], "agent-session-2") is True
+        assert (
+            await database._pool().fetchval(
+                "SELECT count(*) FROM storage_objects WHERE id = $1", object_id
+            )
+            == 0
+        )
+        assert (
+            await database._pool().fetchval(
+                "SELECT count(*) FROM storage_objects WHERE id = $1", job_artifact_id
+            )
+            == 0
+        )
     finally:
         await database.close()

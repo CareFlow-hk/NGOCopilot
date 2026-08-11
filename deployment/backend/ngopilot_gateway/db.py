@@ -201,7 +201,10 @@ class Database:
                 model = EXCLUDED.model,
                 metadata = chat_sessions.metadata || EXCLUDED.metadata,
                 updated_at = now(),
-                deleted_at = NULL
+                deleted_at = CASE
+                    WHEN chat_sessions.status = 'deleting' THEN chat_sessions.deleted_at
+                    ELSE NULL
+                END
             RETURNING id, agent_session_id
             """,
             user_id,
@@ -242,42 +245,134 @@ class Database:
             archived,
         )
 
-    async def session_object_keys(
-        self, user_id: UUID, agent_session_id: str
-    ) -> list[str]:
-        rows = await self._pool().fetch(
-            """
-            SELECT DISTINCT storage.object_key
-            FROM storage_objects AS storage
-            JOIN chat_sessions AS chat
-              ON chat.user_id = storage.user_id
-             AND chat.user_id = $1
-             AND chat.agent_session_id = $2
-            WHERE storage.object_key IS NOT NULL
-              AND (
-                  storage.session_id = chat.id
-                  OR storage.job_id IN (
-                      SELECT job_id
-                      FROM jobs
-                      WHERE user_id = $1 AND agent_session_id = $2
-                  )
-              )
-            """,
-            user_id,
-            agent_session_id[:256],
-        )
-        return [str(row["object_key"]) for row in rows]
-
-    async def delete_chat_session(self, user_id: UUID, agent_session_id: str) -> bool:
+    async def mark_chat_session_deleting(self, user_id: UUID, agent_session_id: str) -> bool:
         result = await self._pool().execute(
             """
-            DELETE FROM chat_sessions
+            UPDATE chat_sessions
+            SET status = 'deleting',
+                deleted_at = COALESCE(deleted_at, now()),
+                updated_at = now()
             WHERE user_id = $1 AND agent_session_id = $2
             """,
             user_id,
             agent_session_id[:256],
         )
-        return result == "DELETE 1"
+        return result == "UPDATE 1"
+
+    async def deleting_chat_sessions(self) -> list[tuple[UUID, str]]:
+        rows = await self._pool().fetch(
+            """
+            SELECT user_id, agent_session_id
+            FROM chat_sessions
+            WHERE status = 'deleting' AND deleted_at IS NOT NULL
+            ORDER BY deleted_at, user_id, agent_session_id
+            """
+        )
+        return [(UUID(str(row["user_id"])), str(row["agent_session_id"])) for row in rows]
+
+    async def chat_session_is_deleting(self, user_id: UUID, agent_session_id: str) -> bool:
+        return bool(
+            await self._pool().fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM chat_sessions
+                    WHERE user_id = $1
+                      AND agent_session_id = $2
+                      AND status = 'deleting'
+                      AND deleted_at IS NOT NULL
+                )
+                """,
+                user_id,
+                agent_session_id[:256],
+            )
+        )
+
+    async def session_storage_objects(
+        self, user_id: UUID, agent_session_id: str
+    ) -> list[asyncpg.Record]:
+        return await self._pool().fetch(
+            """
+            SELECT storage.id, storage.object_key, storage.local_path
+            FROM chat_sessions AS chat
+            JOIN session_storage_objects AS link
+              ON link.user_id = chat.user_id
+             AND link.session_id = chat.id
+            JOIN storage_objects AS storage
+              ON storage.user_id = link.user_id
+             AND storage.id = link.storage_object_id
+            WHERE chat.user_id = $1
+              AND chat.agent_session_id = $2
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM session_storage_objects AS other
+                  WHERE other.user_id = link.user_id
+                    AND other.storage_object_id = link.storage_object_id
+                    AND other.session_id <> link.session_id
+              )
+            ORDER BY storage.id
+            """,
+            user_id,
+            agent_session_id[:256],
+        )
+
+    async def delete_chat_session(self, user_id: UUID, agent_session_id: str) -> bool:
+        async with self._pool().acquire() as connection:
+            async with connection.transaction():
+                chat = await connection.fetchrow(
+                    """
+                    SELECT id
+                    FROM chat_sessions
+                    WHERE user_id = $1 AND agent_session_id = $2
+                    FOR UPDATE
+                    """,
+                    user_id,
+                    agent_session_id[:256],
+                )
+                if chat is None:
+                    return False
+
+                storage_ids = await connection.fetch(
+                    """
+                    SELECT link.storage_object_id
+                    FROM session_storage_objects AS link
+                    WHERE link.user_id = $1
+                      AND link.session_id = $2
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM session_storage_objects AS other
+                          WHERE other.user_id = link.user_id
+                            AND other.storage_object_id = link.storage_object_id
+                            AND other.session_id <> link.session_id
+                      )
+                    """,
+                    user_id,
+                    chat["id"],
+                )
+                exclusive_ids = [row["storage_object_id"] for row in storage_ids]
+
+                await connection.execute(
+                    "DELETE FROM chat_sessions WHERE user_id = $1 AND id = $2",
+                    user_id,
+                    chat["id"],
+                )
+                if exclusive_ids:
+                    await connection.execute(
+                        """
+                        DELETE FROM storage_objects AS storage
+                        WHERE storage.user_id = $1
+                          AND storage.id = ANY($2::uuid[])
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM session_storage_objects AS link
+                              WHERE link.user_id = storage.user_id
+                                AND link.storage_object_id = storage.id
+                          )
+                        """,
+                        user_id,
+                        exclusive_ids,
+                    )
+                return True
 
     async def record_message(
         self,
@@ -448,15 +543,18 @@ class Database:
     ) -> None:
         await self._pool().execute(
             """
-            UPDATE storage_objects AS storage
-            SET session_id = chat.id
-            FROM chat_sessions AS chat
+            INSERT INTO session_storage_objects (user_id, session_id, storage_object_id)
+            SELECT storage.user_id, chat.id, storage.id
+            FROM storage_objects AS storage
+            JOIN chat_sessions AS chat
+              ON chat.user_id = storage.user_id
+             AND chat.agent_session_id = $3
+             AND chat.status <> 'deleting'
             WHERE storage.user_id = $1
               AND storage.kind = 'upload'
               AND storage.metadata->>'placeholder' = $2
               AND storage.deleted_at IS NULL
-              AND chat.user_id = storage.user_id
-              AND chat.agent_session_id = $3
+            ON CONFLICT DO NOTHING
             """,
             user_id,
             placeholder,
@@ -508,39 +606,45 @@ class Database:
     ) -> None:
         await self._pool().execute(
             """
-            INSERT INTO storage_objects (
-                id, user_id, session_id, job_id, kind, filename, content_type,
-                size_bytes, sha256, local_path, object_key, status, verified_at
-            ) VALUES (
-                $1,
-                $2,
-                (
-                    SELECT id FROM chat_sessions
-                    WHERE user_id = $2 AND agent_session_id = $4
-                ),
-                $3,
-                'artifact',
-                $5,
-                $6,
-                $7,
-                $8,
-                $9,
-                $10,
-                'ready',
-                now()
+            WITH target_sessions AS (
+                SELECT chat.user_id, chat.id
+                FROM chat_sessions AS chat
+                WHERE chat.user_id = $2
+                  AND chat.status <> 'deleting'
+                  AND (
+                      chat.agent_session_id = $4
+                      OR EXISTS (
+                          SELECT 1
+                          FROM jobs AS job
+                          WHERE job.user_id = chat.user_id
+                            AND job.session_id = chat.id
+                            AND job.job_id = $3
+                      )
+                  )
+            ), upserted AS (
+                INSERT INTO storage_objects (
+                    id, user_id, kind, filename, content_type, size_bytes,
+                    sha256, local_path, object_key, status, metadata, verified_at
+                ) VALUES (
+                    $1, $2, 'artifact', $5, $6, $7, $8, $9, $10, 'ready',
+                    jsonb_strip_nulls(jsonb_build_object('job_id', $3::text)), now()
+                )
+                ON CONFLICT (user_id, local_path)
+                    WHERE local_path IS NOT NULL AND deleted_at IS NULL
+                DO UPDATE SET
+                    size_bytes = EXCLUDED.size_bytes,
+                    sha256 = EXCLUDED.sha256,
+                    object_key = EXCLUDED.object_key,
+                    status = 'ready',
+                    metadata = storage_objects.metadata || EXCLUDED.metadata,
+                    verified_at = now()
+                RETURNING id, user_id
             )
-            ON CONFLICT (user_id, local_path)
-                WHERE local_path IS NOT NULL AND deleted_at IS NULL
-            DO UPDATE SET
-                job_id = COALESCE(EXCLUDED.job_id, storage_objects.job_id),
-                session_id = COALESCE(
-                    storage_objects.session_id, EXCLUDED.session_id
-                ),
-                size_bytes = EXCLUDED.size_bytes,
-                sha256 = EXCLUDED.sha256,
-                object_key = EXCLUDED.object_key,
-                status = 'ready',
-                verified_at = now()
+            INSERT INTO session_storage_objects (user_id, session_id, storage_object_id)
+            SELECT upserted.user_id, target.id, upserted.id
+            FROM upserted
+            JOIN target_sessions AS target ON target.user_id = upserted.user_id
+            ON CONFLICT DO NOTHING
             """,
             artifact_id,
             user_id,

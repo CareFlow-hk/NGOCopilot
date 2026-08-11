@@ -102,3 +102,21 @@ async def test_checkpoint_stops_active_tenant_immediately(settings) -> None:
 
     manager._stop.assert_awaited_once_with(managed, strict_cache=True)
     assert user_id not in manager._processes
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_retries_retained_cache_without_active_process(settings) -> None:
+    events: list[str] = []
+
+    async def before_evict() -> None:
+        events.append("remove_session_files")
+
+    async def evict_cache(user_id) -> None:
+        events.append("commit_snapshot")
+
+    manager = TenantProcessManager(settings, evict_cache=evict_cache)
+    user_id = uuid4()
+
+    await manager.checkpoint(user_id, before_evict=before_evict)
+
+    assert events == ["remove_session_files", "commit_snapshot"]
