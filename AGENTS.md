@@ -37,6 +37,9 @@ The local deployment CLIs were authenticated on 2026-08-03:
 
 - Railway: `倪嘉辰（Wilson） <wilson1111223@gmail.com>`
 - Render: `Wilsonnijc@outlook.com`
+- Alibaba Cloud CLI `ngopilot` profile: International-site OAuth for account
+  `5523186429905031` (`wilsonnijc@outlook.com`), authenticated on 2026-08-11;
+  verified identity `acs:ram::5523186429905031:root` with type `Account`
 - AWS CLI `default`: account `106189426186`, currently
   `arn:aws:iam::106189426186:root`
 
@@ -48,10 +51,24 @@ railway whoami
 render whoami
 ```
 
-AWS is an optional deployment dependency. Do not require AWS authentication for a
-Railway and/or Render deployment that does not change or inspect AWS resources.
-Run `aws sts get-caller-identity` before specific AWS work or AWS infrastructure
-verification only.
+For Alibaba Cloud work, always use the International OAuth profile explicitly:
+
+```sh
+aliyun <product> <operation> --profile ngopilot --region <target-region>
+```
+
+The `ngopilot` profile uses OAuth Site Type `INTL` (`1`) and the normal Alibaba
+Cloud account, not the China site or a RAM user login. Its default region is
+intentionally unset until the OSS bucket region is selected; never assume a
+region from the account or local timezone.
+
+Alibaba Cloud OSS is the target for future object storage. Do not add new AWS/S3
+dependencies. Treat the existing production S3 configuration as legacy until an
+explicit migration replaces it, verifies OSS end to end, and removes it safely.
+
+AWS is an optional legacy/decommissioning dependency. Do not require AWS
+authentication for Railway, Render, or Alibaba Cloud work. Run
+`aws sts get-caller-identity` only before explicit AWS verification or cleanup.
 
 The signed AWS CLI is installed at `~/.local/aws-cli` and exposed through
 `~/.local/bin/aws`. The Homebrew AWS CLI is unlinked because its Python runtime
@@ -63,9 +80,10 @@ targets. Do not create root access keys, expose or copy its tokens, or treat thi
 authorization for unrelated account-wide changes. Prefer a least-privilege profile
 if one is configured later.
 
-Railway, Render, and AWS manage their credentials outside this repository. Never
-copy access tokens, credential files, or device authorization codes into the
-repository, logs, deployment manifests, or chat output. If a verification command
-for a required deployment platform fails, run the corresponding interactive login
-flow with the user present. An expired optional AWS session must not block an
-otherwise independent Railway or Render deployment.
+Railway, Render, Alibaba Cloud, and AWS manage their credentials outside this
+repository. Never copy access tokens, credential files, or device authorization
+codes into the repository, logs, deployment manifests, or chat output. If a
+verification command for a required deployment platform fails, run the
+corresponding interactive login flow with the user present. An expired optional
+AWS session must not block an otherwise independent Railway, Render, or Alibaba
+Cloud deployment.
