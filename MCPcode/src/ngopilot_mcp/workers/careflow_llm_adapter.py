@@ -11,7 +11,7 @@ from typing import Any
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_OPENROUTER_TEXT_MODEL = "moonshotai/kimi-k2.6"
-DEFAULT_OPENROUTER_VISION_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_OPENROUTER_VISION_MODEL = "qwen/qwen3-vl-32b-instruct"
 PROVIDER_NAME = "openrouter"
 _READINESS_SENTINEL = "provided-by-ngopilot-adapter"
 _RESULT_FUNCTIONS = {
@@ -221,7 +221,7 @@ class _VisionRoutingChat:
 
 
 class _VisionRoutingClient:
-    """Inject OpenRouter's ordered GPT-to-agent-model fallback route."""
+    """Inject OpenRouter's ordered vision-to-agent-model fallback route."""
 
     def __init__(
         self,

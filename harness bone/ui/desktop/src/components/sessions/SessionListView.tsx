@@ -42,6 +42,7 @@ import {
   acpListSessions,
   acpRenameSession,
   acpShareSessionNostr,
+  hideAcpSession,
   type SessionListItem,
 } from '../../acp/sessions';
 import { acpChatSessionActions } from '../../acp/chatSessionStore';
@@ -252,7 +253,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
     // Delete confirmation modal state
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<SessionListItem | null>(null);
-    const [isDeleting, setIsDeleting] = useState(false);
 
     const [showImportLinkModal, setShowImportLinkModal] = useState(false);
     const [nostrImportLink, setNostrImportLink] = useState('');
@@ -305,7 +305,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
             startTransition(() => {
               setSessions((prev) => {
                 const seen = new Set(prev.map((s) => s.id));
-                return [...prev, ...resp.sessions.filter((s) => !seen.has(s.id))];
+                return [...prev, ...resp.sessions.filter((session) => !seen.has(session.id))];
               });
             });
           }
@@ -382,6 +382,17 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         loadGenerationRef.current += 1;
       };
     }, [loadSessions, debouncedSearchTerm]);
+
+    useEffect(() => {
+      const handleSessionDeleted = (event: Event) => {
+        const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
+        loadGenerationRef.current += 1;
+        setSessions((current) => current.filter((session) => session.id !== sessionId));
+      };
+
+      window.addEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
+      return () => window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
+    }, []);
 
     // Hide Nostr sharing when explicitly disabled via env var (restricted/enterprise bundles)
     useEffect(() => {
@@ -470,38 +481,36 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
       [loadSessions, intl]
     );
 
-    const handleConfirmDelete = useCallback(async () => {
-      if (!sessionToDelete || isDeleting) return;
+    const handleConfirmDelete = useCallback(() => {
+      if (!sessionToDelete) return;
 
       const sessionToDeleteId = sessionToDelete.id;
       const sessionName = sessionToDelete.name;
-      setIsDeleting(true);
+      const deletionRequest = acpDeleteSession(sessionToDeleteId);
 
-      try {
-        await acpDeleteSession(sessionToDeleteId);
-        toast.success(intl.formatMessage(i18n.deleteSuccess));
-        window.dispatchEvent(
-          new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: sessionToDeleteId } })
-        );
-        cancelAcpPermissionRequestsForSession(sessionToDeleteId);
-        cancelAcpElicitationRequestsForSession(sessionToDeleteId);
-        acpChatSessionActions.deleteSnapshot(sessionToDeleteId);
-        setShowDeleteConfirmation(false);
-        setSessionToDelete(null);
-        await loadSessions();
-      } catch (error) {
-        console.error('Error deleting session:', error);
-        toast.error(intl.formatMessage(i18n.deleteFailed, { name: sessionName, error: errorMessage(error, 'Unknown error') }));
-      } finally {
-        setIsDeleting(false);
-      }
-    }, [sessionToDelete, isDeleting, loadSessions, intl]);
-
-    const handleCancelDelete = useCallback(() => {
-      if (isDeleting) return;
+      hideAcpSession(sessionToDeleteId);
       setShowDeleteConfirmation(false);
       setSessionToDelete(null);
-    }, [isDeleting]);
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: sessionToDeleteId } })
+      );
+      cancelAcpPermissionRequestsForSession(sessionToDeleteId);
+      cancelAcpElicitationRequestsForSession(sessionToDeleteId);
+      acpChatSessionActions.deleteSnapshot(sessionToDeleteId);
+
+      void deletionRequest
+        .then(() => toast.success(intl.formatMessage(i18n.deleteSuccess)))
+        .catch((error) => {
+          console.error('Error deleting session:', error);
+          toast.error(intl.formatMessage(i18n.deleteFailed, { name: sessionName, error: errorMessage(error, 'Unknown error') }));
+          void loadSessions();
+        });
+    }, [sessionToDelete, loadSessions, intl]);
+
+    const handleCancelDelete = useCallback(() => {
+      setShowDeleteConfirmation(false);
+      setSessionToDelete(null);
+    }, []);
 
     const handleExportSession = useCallback(async (session: SessionListItem, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -1092,7 +1101,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
           confirmLabel={intl.formatMessage(i18n.deleteTitle)}
           cancelLabel={intl.formatMessage(i18n.cancel)}
           confirmVariant="destructive"
-          isSubmitting={isDeleting}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
         />

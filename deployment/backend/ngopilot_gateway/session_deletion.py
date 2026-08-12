@@ -38,14 +38,11 @@ class SessionDeletionService:
     async def delete(self, user_id: UUID, agent_session_id: str) -> bool:
         key = (user_id, agent_session_id[:256])
         async with self._lock(user_id):
-            try:
-                claimed = await self.db.mark_chat_session_deleting(user_id, agent_session_id)
-                if not claimed:
-                    return False
-                return await self._delete_marked(user_id, agent_session_id)
-            except Exception:
-                self._schedule_retry(key)
-                raise
+            claimed = await self.db.mark_chat_session_deleting(user_id, agent_session_id)
+            if not claimed:
+                return False
+            self._schedule_retry(key, immediate=True)
+            return True
 
     async def resume_pending(self) -> set[UUID]:
         pending = await self.db.deleting_chat_sessions()

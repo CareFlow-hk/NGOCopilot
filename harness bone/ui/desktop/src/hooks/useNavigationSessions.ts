@@ -7,6 +7,7 @@ import type { Session } from '../types/session';
 import {
   acpGetSessionListItem,
   acpListRecentSessions,
+  isAcpSessionHidden,
   type SessionListItem,
 } from '../acp/sessions';
 import { groupSessionsByProject } from '../utils/projectSessions';
@@ -87,6 +88,7 @@ export function useNavigationSessions() {
 
     acpGetSessionListItem(activeSessionId)
       .then((item) => {
+        if (isAcpSessionHidden(item.id)) return;
         setRecentSessions((prev) => prependUnique(prev, item));
       })
       .catch((error) => {
@@ -100,7 +102,7 @@ export function useNavigationSessions() {
 
     const handleSessionCreated = (event: Event) => {
       const { session } = (event as CustomEvent<{ session?: Session }>).detail || {};
-      if (session) {
+      if (session && !isAcpSessionHidden(session.id)) {
         setRecentSessions((prev) => prependUnique(prev, sessionToListItem(session)));
       }
 
@@ -157,7 +159,7 @@ export function useNavigationSessions() {
       acpListRecentSessions(MAX_RECENT_SESSIONS)
         .then((sessions) => {
           if (version !== fetchVersion) return;
-          setRecentSessions(sessions.filter((session) => session.id !== sessionId));
+          setRecentSessions(sessions);
         })
         .catch((error) => console.error('Failed to fetch sessions:', error));
     };

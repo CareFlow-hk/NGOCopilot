@@ -51,7 +51,7 @@ placeholders and must not be deployed literally.
 | `ALLOWED_ORIGINS` | Yes | Comma-separated exact Render origins; never `*` |
 | `GOOSE_PROVIDER` | Yes | `openrouter` |
 | `GOOSE_MODEL` | Yes | `moonshotai/kimi-k2.6` |
-| `CAREFLOW_VISION_MODEL` | Yes | `openai/gpt-4.1-mini`; CareFlow image recognition tries this first and falls back to `GOOSE_MODEL` through OpenRouter |
+| `CAREFLOW_VISION_MODEL` | Yes | `qwen/qwen3-vl-32b-instruct`; primary multilingual handwriting model, with `GOOSE_MODEL` as the ordered OpenRouter fallback |
 | `OPENROUTER_API_KEY` | Yes | Railway secret; never a `VITE_*` variable |
 | `DATABASE_POOL_MIN_SIZE` | No | PostgreSQL pool floor; `1` is the default |
 | `DATABASE_POOL_MAX_SIZE` | No | PostgreSQL pool ceiling; `10` is the default and must be at least the floor |

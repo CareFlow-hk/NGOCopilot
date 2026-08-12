@@ -45,7 +45,7 @@ def _fake_client(
     )
 
 
-def test_shared_agent_key_routes_text_to_kimi_and_vision_to_gpt() -> None:
+def test_shared_agent_key_routes_text_and_vision_to_separate_models() -> None:
     client_module = _native_client_module()
     settings = _settings()
     factory_calls: list[dict[str, str]] = []
@@ -128,7 +128,7 @@ def test_late_bound_vision_functions_use_adapter_and_report_openrouter() -> None
         environ={
             "OPENROUTER_API_KEY": "test-key",
             "GOOSE_MODEL": "moonshotai/kimi-k2.6",
-            "CAREFLOW_VISION_MODEL": "openai/gpt-4.1-mini",
+            "CAREFLOW_VISION_MODEL": "qwen/qwen3-vl-32b-instruct",
         },
         client_factory=lambda **kwargs: _fake_client(completion_calls),
     )
@@ -150,13 +150,13 @@ def test_late_bound_vision_functions_use_adapter_and_report_openrouter() -> None
     result = vision.extract_volunteer_form()
 
     assert vision.get_vision_client() is vision.get_client()
-    assert vision.resolve_model("vision") == "openai/gpt-4.1-mini"
+    assert vision.resolve_model("vision") == "qwen/qwen3-vl-32b-instruct"
     assert result["_meta"] == {
         "provider": "openrouter",
         "model": "moonshotai/kimi-k2.6",
-        "requested_model": "openai/gpt-4.1-mini",
+        "requested_model": "qwen/qwen3-vl-32b-instruct",
     }
     assert completion_calls[0]["extra_body"] == {
-        "models": ["openai/gpt-4.1-mini", "moonshotai/kimi-k2.6"],
+        "models": ["qwen/qwen3-vl-32b-instruct", "moonshotai/kimi-k2.6"],
         "route": "fallback",
     }

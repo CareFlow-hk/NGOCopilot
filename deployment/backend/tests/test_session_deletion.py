@@ -10,7 +10,7 @@ from ngopilot_gateway.session_deletion import SessionDeletionService
 
 
 @pytest.mark.asyncio
-async def test_session_deletion_marks_and_purges_before_database_delete() -> None:
+async def test_session_deletion_acknowledges_before_cleanup_finishes() -> None:
     user_id = uuid4()
     events: list[str] = []
     database = AsyncMock()
@@ -61,6 +61,11 @@ async def test_session_deletion_marks_and_purges_before_database_delete() -> Non
     assert await service.delete(user_id, "session-1") is True
 
     database.mark_chat_session_deleting.assert_awaited_once_with(user_id, "session-1")
+    database.delete_chat_session.assert_not_awaited()
+
+    cleanup_task = service._retry_tasks[(user_id, "session-1")]
+    await cleanup_task
+
     assert processes.checkpoint.await_count == 1
     assert processes.checkpoint.await_args.args == (user_id,)
     assert callable(processes.checkpoint.await_args.kwargs["before_evict"])
@@ -130,8 +135,7 @@ async def test_failed_cleanup_is_retried_from_durable_deleting_state() -> None:
         database, processes, storage, runtime_sessions, retry_delays=(0,)
     )
 
-    with pytest.raises(RuntimeError, match="temporary GCS failure"):
-        await service.delete(user_id, "session-1")
+    assert await service.delete(user_id, "session-1") is True
 
     retry_task = service._retry_tasks[(user_id, "session-1")]
     await retry_task
@@ -170,6 +174,40 @@ async def test_same_tenant_session_deletions_are_serialized() -> None:
         service.delete(user_id, "session-1"),
         service.delete(user_id, "session-2"),
     ) == [True, True]
+    await asyncio.gather(*service._retry_tasks.values())
 
     assert max_active == 1
     assert storage.restore_tenant_cache.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cleanup_continues_after_delete_acknowledgement() -> None:
+    user_id = uuid4()
+    database = AsyncMock()
+    database.mark_chat_session_deleting.return_value = True
+    database.chat_session_is_deleting.return_value = True
+    database.session_storage_objects.return_value = []
+    database.delete_chat_session.return_value = True
+    processes = AsyncMock()
+    storage = AsyncMock()
+    runtime_sessions = AsyncMock()
+    cleanup_started = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+
+    async def checkpoint(*_, before_evict):
+        cleanup_started.set()
+        await allow_cleanup.wait()
+        await before_evict()
+
+    processes.checkpoint.side_effect = checkpoint
+    service = SessionDeletionService(
+        database, processes, storage, runtime_sessions, retry_delays=()
+    )
+
+    assert await service.delete(user_id, "session-1") is True
+    await cleanup_started.wait()
+    database.delete_chat_session.assert_not_awaited()
+
+    allow_cleanup.set()
+    await service._retry_tasks[(user_id, "session-1")]
+    database.delete_chat_session.assert_awaited_once_with(user_id, "session-1")

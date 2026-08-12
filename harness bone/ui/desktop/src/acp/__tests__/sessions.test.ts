@@ -1,7 +1,14 @@
 import type { SessionInfo } from '@agentclientprotocol/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
-import { acpGetSessionListItem, acpLoadSession, sessionInfoToSession } from '../sessions';
+import {
+  acpGetSessionListItem,
+  acpListRecentSessions,
+  acpListSessions,
+  acpLoadSession,
+  hideAcpSession,
+  sessionInfoToSession,
+} from '../sessions';
 
 vi.mock('../acpConnection', () => ({
   getAcpClient: vi.fn(),
@@ -110,5 +117,22 @@ describe('ACP sessions', () => {
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-5',
     });
+  });
+
+  it('filters optimistically hidden sessions from every list response', async () => {
+    const hidden = sessionInfo({ sessionId: 'hidden-session' });
+    const visible = sessionInfo({ sessionId: 'visible-session' });
+    const client = {
+      listSessions: vi.fn().mockResolvedValue({ sessions: [hidden, visible] }),
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+    hideAcpSession('hidden-session');
+
+    await expect(acpListSessions()).resolves.toMatchObject({
+      sessions: [{ id: 'visible-session' }],
+    });
+    await expect(acpListRecentSessions(10)).resolves.toMatchObject([{ id: 'visible-session' }]);
   });
 });

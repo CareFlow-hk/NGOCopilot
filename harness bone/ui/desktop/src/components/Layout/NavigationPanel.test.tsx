@@ -8,9 +8,12 @@ import { Navigation } from './NavigationPanel';
 const mocks = vi.hoisted(() => ({
   deleteSession: vi.fn(),
   deleteSnapshot: vi.fn(),
+  hideSession: vi.fn(),
   cancelPermissions: vi.fn(),
   cancelElicitations: vi.fn(),
   fetchSessions: vi.fn(),
+  deletionSucceeded: vi.fn(),
+  deletionFailed: vi.fn(),
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -103,6 +106,7 @@ vi.mock('../ui/ConfirmationModal', () => ({
 vi.mock('../../acp/sessions', () => ({
   acpDeleteSession: mocks.deleteSession,
   acpRenameSession: vi.fn(),
+  hideAcpSession: mocks.hideSession,
 }));
 
 vi.mock('../../acp/chatSessionStore', () => ({
@@ -118,7 +122,7 @@ vi.mock('../../acp/elicitationRequests', () => ({
 }));
 
 vi.mock('react-toastify', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: mocks.deletionSucceeded, error: mocks.deletionFailed },
 }));
 
 describe('Navigation session deletion', () => {
@@ -128,8 +132,14 @@ describe('Navigation session deletion', () => {
     window.innerWidth = 1200;
   });
 
-  it('confirms sidebar deletion and clears session-scoped client state', async () => {
+  it('removes the session from the UI before durable cleanup finishes', async () => {
     const deleted = vi.fn();
+    let finishDeletion: (() => void) | undefined;
+    mocks.deleteSession.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishDeletion = resolve;
+      })
+    );
     window.addEventListener(AppEvents.SESSION_DELETED, deleted);
 
     render(<Navigation />, { wrapper: IntlTestWrapper });
@@ -144,16 +154,22 @@ describe('Navigation session deletion', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm deletion' }));
 
-    await waitFor(() => expect(mocks.deleteSession).toHaveBeenCalledWith('session-1'));
+    expect(mocks.deleteSession).toHaveBeenCalledWith('session-1');
+    expect(mocks.hideSession).toHaveBeenCalledWith('session-1');
     expect(deleted).toHaveBeenCalledOnce();
     expect(mocks.cancelPermissions).toHaveBeenCalledWith('session-1');
     expect(mocks.cancelElicitations).toHaveBeenCalledWith('session-1');
     expect(mocks.deleteSnapshot).toHaveBeenCalledWith('session-1');
+    expect(screen.queryByRole('button', { name: 'Confirm deletion' })).not.toBeInTheDocument();
+    expect(mocks.deletionSucceeded).not.toHaveBeenCalled();
+
+    finishDeletion?.();
+    await waitFor(() => expect(mocks.deletionSucceeded).toHaveBeenCalledOnce());
 
     window.removeEventListener(AppEvents.SESSION_DELETED, deleted);
   });
 
-  it('keeps the confirmation open when durable deletion fails so the user can retry', async () => {
+  it('keeps the session removed and refreshes after a rejected delete request', async () => {
     mocks.deleteSession.mockRejectedValueOnce(new Error('GCS is temporarily unavailable'));
 
     render(<Navigation />, { wrapper: IntlTestWrapper });
@@ -163,7 +179,9 @@ describe('Navigation session deletion', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm deletion' }));
 
     await waitFor(() => expect(mocks.deleteSession).toHaveBeenCalledWith('session-1'));
-    expect(screen.getByRole('button', { name: 'Confirm deletion' })).toBeInTheDocument();
-    expect(mocks.deleteSnapshot).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Confirm deletion' })).not.toBeInTheDocument();
+    expect(mocks.deleteSnapshot).toHaveBeenCalledWith('session-1');
+    await waitFor(() => expect(mocks.fetchSessions).toHaveBeenCalled());
+    expect(mocks.deletionFailed).toHaveBeenCalledOnce();
   });
 });

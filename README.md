@@ -4,6 +4,8 @@ NGOPilot is a local AI agent tailored for NGO operations. It combines the
 rebranded agent harness with NGOPilot MCP tools for CareFlow and roster
 workflows.
 
+![NGOPilot layered product architecture](docs/images/ngopilot-layered-product-architecture.png)
+
 ## Repository Layout
 
 - `harness bone/`: NGOPilot agent runtime, CLI, and desktop application

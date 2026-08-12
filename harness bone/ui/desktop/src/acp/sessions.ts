@@ -60,6 +60,15 @@ export interface AcpLoadSessionResult {
 }
 
 const inFlightSessionLoads = new Map<string, Promise<AcpLoadSessionResult>>();
+const hiddenSessionIds = new Set<string>();
+
+export function hideAcpSession(sessionId: string): void {
+  hiddenSessionIds.add(sessionId);
+}
+
+export function isAcpSessionHidden(sessionId: string): boolean {
+  return hiddenSessionIds.has(sessionId);
+}
 
 function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
   const meta = (rawMeta ?? {}) as LoadSessionMeta;
@@ -153,7 +162,9 @@ export async function acpListSessions(
   request._meta = meta;
   const response = await client.listSessions(request);
   return {
-    sessions: response.sessions.map(sessionInfoToListItem),
+    sessions: response.sessions
+      .map(sessionInfoToListItem)
+      .filter((session) => !isAcpSessionHidden(session.id)),
     nextCursor: response.nextCursor ?? null,
   };
 }
@@ -165,7 +176,10 @@ export async function acpListRecentSessions(maxSessions: number): Promise<Sessio
 
   const client = await getAcpClient();
   const response = await client.listSessions({ _meta: { types: SESSION_LIST_TYPES } });
-  return response.sessions.slice(0, maxSessions).map(sessionInfoToListItem);
+  return response.sessions
+    .map(sessionInfoToListItem)
+    .filter((session) => !isAcpSessionHidden(session.id))
+    .slice(0, maxSessions);
 }
 
 export async function acpGetSessionListItem(sessionId: string): Promise<SessionListItem> {
@@ -301,10 +315,7 @@ export async function acpExportSession(sessionId: string): Promise<string> {
   return response.data;
 }
 
-export async function acpImportSession(
-  input: string,
-  source: SessionImportSource
-): Promise<void> {
+export async function acpImportSession(input: string, source: SessionImportSource): Promise<void> {
   const client = await getAcpClient();
   await client.goose.sessionImport_unstable({ input, source });
 }
