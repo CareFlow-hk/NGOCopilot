@@ -248,9 +248,7 @@ class AcpRecorder:
                 try:
                     await self.delete_session(self.user_id, pending.session_id)
                 except Exception as error:
-                    raise SessionDeletionError(
-                        "Cloud session cleanup did not complete"
-                    ) from error
+                    raise SessionDeletionError("Cloud session cleanup did not complete") from error
                 return
         await self._record_jobs(pending.session_id or session_id_from(result), message)
 
@@ -269,14 +267,21 @@ async def proxy_websocket(
     processes: TenantProcessManager,
     storage: StorageService,
 ) -> None:
-    managed = await processes.acquire(user_id)
-    recorder = AcpRecorder(
-        db,
-        settings,
-        user_id,
-        delete_session=websocket.app.state.session_deletion.delete,
-    )
     try:
+        await websocket.accept()
+    except (OSError, WebSocketDisconnect):
+        return
+
+    acquired = False
+    try:
+        managed = await processes.acquire(user_id)
+        acquired = True
+        recorder = AcpRecorder(
+            db,
+            settings,
+            user_id,
+            delete_session=websocket.app.state.session_deletion.delete,
+        )
         async with connect(
             managed.websocket_url,
             additional_headers={"X-Secret-Key": managed.secret},
@@ -285,7 +290,6 @@ async def proxy_websocket(
             ping_timeout=20,
             close_timeout=5,
         ) as upstream:
-            await websocket.accept()
 
             async def client_to_agent() -> None:
                 while True:
@@ -306,13 +310,16 @@ async def proxy_websocket(
                         )
                     except PlaceholderError as error:
                         if "id" in message:
-                            await websocket.send_json(
-                                {
-                                    "jsonrpc": "2.0",
-                                    "id": message["id"],
-                                    "error": {"code": -32602, "message": str(error)},
-                                }
-                            )
+                            try:
+                                await websocket.send_json(
+                                    {
+                                        "jsonrpc": "2.0",
+                                        "id": message["id"],
+                                        "error": {"code": -32602, "message": str(error)},
+                                    }
+                                )
+                            except OSError as disconnect:
+                                raise WebSocketDisconnect(code=1006) from disconnect
                             continue
                         raise
                     await upstream.send(json.dumps(rewritten, separators=(",", ":")))
@@ -364,7 +371,10 @@ async def proxy_websocket(
                     except Exception:
                         logger.exception("Failed to persist ACP metadata for user %s", user_id)
                     storage.schedule_artifact_mirror(user_id, message)
-                    await websocket.send_text(browser_raw)
+                    try:
+                        await websocket.send_text(browser_raw)
+                    except OSError as disconnect:
+                        raise WebSocketDisconnect(code=1006) from disconnect
 
             relays = {
                 asyncio.create_task(client_to_agent(), name=f"acp-client-{user_id}"),
@@ -381,4 +391,5 @@ async def proxy_websocket(
     except (WebSocketDisconnect, ConnectionClosed):
         pass
     finally:
-        await processes.release(user_id)
+        if acquired:
+            await processes.release(user_id)

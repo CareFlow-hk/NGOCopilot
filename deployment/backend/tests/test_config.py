@@ -56,6 +56,23 @@ def test_production_accepts_complete_gcs_configuration() -> None:
     assert settings.gcs_configured is True
 
 
+def test_production_requires_process_idle_grace() -> None:
+    with pytest.raises(
+        ValidationError, match="NGOPILOT_PROCESS_IDLE_SECONDS must be positive in production"
+    ):
+        Settings(
+            app_env="production",
+            public_api_url="https://api.example.test",
+            allowed_origins="https://app.example.test",
+            database_url="postgresql://example.test/ngopilot",
+            openrouter_api_key="model-secret",
+            gcs_bucket="ngopilot-prod-example",
+            gcp_project_id="ngopilot-project",
+            gcp_service_account_json=service_account_json(),
+            ngopilot_process_idle_seconds=0,
+        )
+
+
 def test_gcs_credentials_must_be_service_account_json() -> None:
     with pytest.raises(ValidationError, match="service-account credential"):
         Settings(app_env="test", gcp_service_account_json="{}")

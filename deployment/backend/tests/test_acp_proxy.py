@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from fastapi import WebSocketDisconnect
 
+from ngopilot_gateway import acp_proxy
 from ngopilot_gateway.acp_proxy import (
     AcpRecorder,
     browser_message,
     extract_jobs,
     isolate_client_request,
+    proxy_websocket,
 )
 
 
@@ -23,6 +29,113 @@ class RecordingDatabase:
             self.calls.append((name, *args, kwargs))
 
         return record
+
+
+class TestWebSocket:
+    __test__ = False
+
+    def __init__(self, *, accept_error: Exception | None = None):
+        self.accepted = False
+        self.accept_error = accept_error
+        self.app = SimpleNamespace(
+            state=SimpleNamespace(
+                session_deletion=SimpleNamespace(delete=AsyncMock()),
+            )
+        )
+
+    async def accept(self) -> None:
+        if self.accept_error is not None:
+            raise self.accept_error
+        self.accepted = True
+
+    async def receive_text(self) -> str:
+        raise WebSocketDisconnect(code=1000)
+
+
+class BlockingUpstream:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    async def send(self, message: str) -> None:
+        return None
+
+    def __aiter__(self):
+        async def messages():
+            await asyncio.Future()
+            yield ""
+
+        return messages()
+
+
+@pytest.mark.asyncio
+async def test_proxy_accepts_browser_before_waiting_for_tenant_startup(settings) -> None:
+    websocket = TestWebSocket()
+    processes = SimpleNamespace(release=AsyncMock())
+
+    async def fail_acquire(user_id):
+        assert websocket.accepted is True
+        raise RuntimeError("startup failed")
+
+    processes.acquire = AsyncMock(side_effect=fail_acquire)
+
+    with pytest.raises(RuntimeError, match="startup failed"):
+        await proxy_websocket(
+            websocket,
+            uuid4(),
+            settings,
+            RecordingDatabase(),
+            processes,
+            SimpleNamespace(),
+        )
+
+    processes.release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_proxy_returns_cleanly_when_browser_disconnects_during_accept(settings) -> None:
+    websocket = TestWebSocket(accept_error=OSError("client disconnected"))
+    processes = SimpleNamespace(acquire=AsyncMock(), release=AsyncMock())
+
+    await proxy_websocket(
+        websocket,
+        uuid4(),
+        settings,
+        RecordingDatabase(),
+        processes,
+        SimpleNamespace(),
+    )
+
+    processes.acquire.assert_not_awaited()
+    processes.release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_proxy_releases_successful_acquire_once_after_client_disconnect(
+    settings, monkeypatch
+) -> None:
+    websocket = TestWebSocket()
+    managed = SimpleNamespace(
+        websocket_url="ws://127.0.0.1:1234/acp",
+        secret="secret",
+        tenant_root=Path("/data/tenants/test-user"),
+    )
+    processes = SimpleNamespace(acquire=AsyncMock(return_value=managed), release=AsyncMock())
+    monkeypatch.setattr(acp_proxy, "connect", lambda *args, **kwargs: BlockingUpstream())
+
+    await proxy_websocket(
+        websocket,
+        uuid4(),
+        settings,
+        RecordingDatabase(),
+        processes,
+        SimpleNamespace(),
+    )
+
+    processes.acquire.assert_awaited_once()
+    processes.release.assert_awaited_once()
 
 
 @pytest.mark.asyncio

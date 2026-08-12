@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     ngopilot_mcp_bin: str = "ngopilot-mcp"
     ngopilot_mcp_shared_state_dir: Path = Path("/opt/ngopilot/shared")
     ngopilot_process_startup_seconds: float = Field(default=90, gt=0, le=600)
-    ngopilot_process_idle_seconds: float = Field(default=0, ge=0, le=86400)
+    ngopilot_process_idle_seconds: float = Field(default=900, ge=0, le=86400)
 
     database_url: str = ""
     database_pool_min_size: int = Field(default=1, ge=1, le=20)
@@ -141,6 +141,8 @@ class Settings(BaseSettings):
                 raise ValueError(f"ALLOWED_ORIGINS contains an invalid origin: {origin}")
 
         if self.app_env == "production":
+            if self.ngopilot_process_idle_seconds <= 0:
+                raise ValueError("NGOPILOT_PROCESS_IDLE_SECONDS must be positive in production")
             service_account_json = self.gcp_service_account_json.get_secret_value()
             required = {
                 "DATABASE_URL": self.database_url,
@@ -153,9 +155,7 @@ class Settings(BaseSettings):
             if missing:
                 raise ValueError("missing production settings: " + ", ".join(missing))
             if self.gcp_service_account_info["project_id"] != self.gcp_project_id:
-                raise ValueError(
-                    "GCP_SERVICE_ACCOUNT_JSON project_id must match GCP_PROJECT_ID"
-                )
+                raise ValueError("GCP_SERVICE_ACCOUNT_JSON project_id must match GCP_PROJECT_ID")
             if self.goose_provider != "openrouter":
                 raise ValueError("GOOSE_PROVIDER must be openrouter in production")
             if self.goose_model != "moonshotai/kimi-k2.6":

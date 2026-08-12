@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -62,8 +63,9 @@ def test_redaction_removes_runtime_secrets() -> None:
 
 
 @pytest.mark.asyncio
-async def test_release_stops_disconnected_tenant_immediately(settings) -> None:
-    manager = TenantProcessManager(settings)
+async def test_release_stops_disconnected_tenant_immediately_when_configured(settings) -> None:
+    immediate_settings = settings.model_copy(update={"ngopilot_process_idle_seconds": 0})
+    manager = TenantProcessManager(immediate_settings)
     user_id = uuid4()
     managed = ManagedProcess(
         user_id=user_id,
@@ -76,11 +78,37 @@ async def test_release_stops_disconnected_tenant_immediately(settings) -> None:
     manager._processes[user_id] = managed
     manager._stop = AsyncMock()
 
-    assert settings.ngopilot_process_idle_seconds == 0
     await manager.release(user_id)
 
     manager._stop.assert_awaited_once_with(managed)
     assert user_id not in manager._processes
+
+
+@pytest.mark.asyncio
+async def test_idle_grace_preserves_tenant_across_brief_reconnect(settings) -> None:
+    manager = TenantProcessManager(settings)
+    user_id = uuid4()
+    managed = ManagedProcess(
+        user_id=user_id,
+        process=SimpleNamespace(returncode=None),
+        port=1234,
+        secret="secret",
+        tenant_root=manager.tenant_root(user_id),
+        refs=1,
+    )
+    manager._processes[user_id] = managed
+    manager._start = AsyncMock()
+
+    await manager.release(user_id)
+
+    assert settings.ngopilot_process_idle_seconds == 900
+    assert managed.idle_task is not None
+    idle_task = managed.idle_task
+    assert await manager.acquire(user_id) is managed
+    assert managed.refs == 1
+    assert managed.idle_task is None
+    manager._start.assert_not_awaited()
+    await asyncio.gather(idle_task, return_exceptions=True)
 
 
 @pytest.mark.asyncio

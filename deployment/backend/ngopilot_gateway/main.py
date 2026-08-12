@@ -18,6 +18,7 @@ from fastapi import (
     Request,
     UploadFile,
     WebSocket,
+    WebSocketDisconnect,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,6 +50,26 @@ class ArtifactUrlResponse(BaseModel):
     size_bytes: int
     sha256: str
     expires_in: int
+
+
+async def serve_acp_connection(
+    websocket: WebSocket,
+    user_id: UUID,
+    settings: Settings,
+    db: Database,
+    processes: TenantProcessManager,
+    storage: StorageService,
+) -> None:
+    try:
+        await proxy_websocket(websocket, user_id, settings, db, processes, storage)
+    except WebSocketDisconnect:
+        return
+    except Exception as error:
+        logger.error("ACP connection failed: %s", type(error).__name__)
+        try:
+            await websocket.close(code=1011)
+        except (OSError, RuntimeError, WebSocketDisconnect):
+            pass
 
 
 def migration_directory() -> Path:
@@ -210,23 +231,15 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         if row is None:
             await websocket.close(code=4401)
             return
-        try:
-            user_id = UUID(str(row["user_id"]))
-            await proxy_websocket(
-                websocket,
-                user_id,
-                app_settings,
-                app.state.db,
-                app.state.processes,
-                app.state.storage,
-            )
-        except Exception as error:
-            logger.error("ACP connection failed: %s", type(error).__name__)
-            # The process or upstream connection can fail before the socket is accepted.
-            try:
-                await websocket.close(code=1011)
-            except RuntimeError:
-                pass
+        user_id = UUID(str(row["user_id"]))
+        await serve_acp_connection(
+            websocket,
+            user_id,
+            app_settings,
+            app.state.db,
+            app.state.processes,
+            app.state.storage,
+        )
 
     return app
 

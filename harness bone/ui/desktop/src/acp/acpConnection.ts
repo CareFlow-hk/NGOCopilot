@@ -23,7 +23,8 @@ type AcpConnection = {
 
 type AcpRecoveryListener = (recovering: boolean) => void;
 
-const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
+const ACP_INITIALIZE_TIMEOUT_MS = 120_000;
+const ACP_INITIAL_CONNECT_ATTEMPTS = 2;
 const ACP_RECONNECT_BASE_DELAY_MS = 500;
 const ACP_RECONNECT_MAX_DELAY_MS = 30_000;
 
@@ -114,7 +115,7 @@ async function getConnection(): Promise<AcpConnection> {
   if (!pendingConnection) {
     const generation = connectionGeneration;
     let connectionAttempt: Promise<AcpConnection>;
-    connectionAttempt = openConnection(generation).catch((error) => {
+    connectionAttempt = openInitialConnection(generation).catch((error) => {
       if (pendingConnection === connectionAttempt) {
         pendingConnection = null;
       }
@@ -124,6 +125,30 @@ async function getConnection(): Promise<AcpConnection> {
   }
 
   return pendingConnection;
+}
+
+async function openInitialConnection(generation: number): Promise<AcpConnection> {
+  let lastError: unknown = new Error('ACP connection failed');
+
+  for (let attempt = 0; attempt < ACP_INITIAL_CONNECT_ATTEMPTS; attempt += 1) {
+    try {
+      return await openConnection(generation);
+    } catch (error) {
+      lastError = error;
+      if (
+        attempt === ACP_INITIAL_CONNECT_ATTEMPTS - 1 ||
+        generation !== connectionGeneration ||
+        isGooseServeExitedError(error) ||
+        isInitializeTimeoutError(error)
+      ) {
+        throw error;
+      }
+      const maximumDelay = ACP_RECONNECT_BASE_DELAY_MS * 2 ** attempt;
+      await delay(Math.floor(Math.random() * maximumDelay));
+    }
+  }
+
+  throw lastError;
 }
 
 async function openConnection(generation: number): Promise<AcpConnection> {
@@ -206,6 +231,10 @@ async function retryWithBackoff(generation: number): Promise<AcpConnection> {
 
 function isGooseServeExitedError(error: unknown): boolean {
   return error instanceof Error && error.message.includes(GOOSE_SERVE_EXITED_USER_MESSAGE);
+}
+
+function isInitializeTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('ACP initialize timed out after ');
 }
 
 function delay(delayMs: number): Promise<void> {

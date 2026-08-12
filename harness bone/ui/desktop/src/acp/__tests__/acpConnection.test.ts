@@ -65,6 +65,55 @@ describe('ACP connection ownership', () => {
     expect(transport.createWebSocketStream).toHaveBeenCalledTimes(1);
   });
 
+  it('allows a cold initialization to take longer than ten seconds', async () => {
+    let finishInitialization: (value: object) => void = () => undefined;
+    sdk.initialize.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishInitialization = resolve;
+        })
+    );
+    const { getAcpClient } = await import('../acpConnection');
+    const connection = getAcpClient();
+
+    await vi.advanceTimersByTimeAsync(10_001);
+    finishInitialization({});
+
+    await expect(connection).resolves.toBe(sdk.instances[0]);
+    expect(transport.createWebSocketStream.mock.results[0].value.close).not.toHaveBeenCalled();
+  });
+
+  it('closes a connection that does not initialize within two minutes', async () => {
+    sdk.initialize.mockImplementationOnce(() => new Promise(() => undefined));
+    const { getAcpClient } = await import('../acpConnection');
+    const connection = getAcpClient();
+    const rejection = expect(connection).rejects.toThrow('ACP initialize timed out after 120000ms');
+    await Promise.resolve();
+    const stream = transport.createWebSocketStream.mock.results[0].value;
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    await rejection;
+    expect(stream.close).toHaveBeenCalledOnce();
+  });
+
+  it('retries one transient failure during the initial connection', async () => {
+    sdk.initialize
+      .mockRejectedValueOnce(new Error('gateway unavailable'))
+      .mockResolvedValueOnce({});
+    const { getAcpClient } = await import('../acpConnection');
+    const connection = getAcpClient();
+
+    await vi.advanceTimersByTimeAsync(249);
+    expect(sdk.instances).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(connection).resolves.toBe(sdk.instances[1]);
+    expect(sdk.instances).toHaveLength(2);
+    expect(transport.createWebSocketStream).toHaveBeenCalledTimes(2);
+  });
+
   it('automatically reconnects after close and shares the result between callers', async () => {
     const { getAcpClient } = await import('../acpConnection');
     const firstClient = await getAcpClient();

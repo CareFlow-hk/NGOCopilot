@@ -14,6 +14,7 @@ def main() -> None:
         host="0.0.0.0",
         port=settings.port,
         access_log=False,
+        log_level="warning",
         proxy_headers=True,
         forwarded_allow_ips="*",
         ws_max_size=64 * 1024 * 1024,
