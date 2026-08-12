@@ -45,9 +45,14 @@ export function ArtifactPathLink({
   const filesystemPath = artifactFilesystemPath(path);
   const filename = artifactFilename(filesystemPath);
   const displayFilename = typeof children === 'string' && children.trim() ? children : filename;
-  const color = inverted
-    ? 'border-gray-600 bg-gray-800 text-gray-100 hover:bg-gray-700 focus-visible:ring-gray-400'
-    : 'border-border-primary bg-background-secondary text-text-primary hover:bg-background-primary focus-visible:ring-border-primary';
+  const appearance = compact
+    ? inverted
+      ? 'border-gray-600 bg-gray-800 text-gray-100 hover:bg-gray-700 focus-visible:ring-gray-400'
+      : 'border-border-primary bg-background-secondary text-text-primary hover:bg-background-primary focus-visible:ring-border-primary'
+    : 'border-cinnabar-600 bg-cinnabar-600 text-paper-50 hover:border-cinnabar-700 hover:bg-cinnabar-700 active:border-cinnabar-700 active:bg-cinnabar-700 focus-visible:ring-cinnabar-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background-primary';
+  const sizing = compact
+    ? 'my-0.5 gap-1.5 px-2 py-1 text-xs'
+    : 'my-2 min-h-12 w-fit gap-3 px-4 py-3 text-sm sm:text-base';
 
   const handleDownload = async (event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
@@ -78,11 +83,20 @@ export function ArtifactPathLink({
       aria-busy={isDownloading}
       aria-disabled={isDownloading}
       data-artifact-path={filesystemPath}
-      className={`my-0.5 inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 align-middle font-sans text-xs font-medium no-underline transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none ${color}`}
+      className={`inline-flex max-w-full cursor-pointer items-center rounded-md border align-middle font-sans font-semibold no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 aria-disabled:pointer-events-none aria-disabled:opacity-70 ${sizing} ${appearance}`}
       onClick={(event) => void handleDownload(event)}
     >
-      <Download className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
-      <span className={compact ? 'truncate' : 'break-all'}>
+      <span
+        className={
+          compact
+            ? 'flex h-5 w-5 flex-shrink-0 items-center justify-center'
+            : 'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-paper-50/15'
+        }
+        aria-hidden="true"
+      >
+        <Download className={compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
+      </span>
+      <span className={compact ? 'truncate' : 'min-w-0 overflow-wrap-anywhere text-left'}>
         {isDownloading
           ? intl.formatMessage(i18n.preparing)
           : intl.formatMessage(i18n.download, {

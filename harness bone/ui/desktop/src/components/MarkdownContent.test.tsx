@@ -35,6 +35,7 @@ describe('MarkdownContent', () => {
 
         expect(link).toHaveAttribute('href', path);
         expect(link).toHaveTextContent('Download visit report.xlsx');
+        expect(link).toHaveClass('min-h-12', 'px-4', 'py-3', 'bg-cinnabar-600');
         expect(container).not.toHaveTextContent(path);
 
         fireEvent.click(link);
