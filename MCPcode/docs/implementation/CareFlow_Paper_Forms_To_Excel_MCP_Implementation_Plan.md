@@ -121,7 +121,9 @@ Tool name: `careflow_paper_forms_to_excel`
 
 Validation contract:
 
-- `title` is required and non-empty.
+- `title` is optional. When omitted, the MCP generates a stable display title
+  from `visit_date`, a single source filename, or the image count before calling
+  CareFlow. A supplied title must be non-empty.
 - `image_paths` contains at least one absolute, existing, non-empty image.
 - Reliably supported formats are `.jpg`, `.jpeg`, and `.png`; file content is
   verified, not just the suffix.
@@ -152,11 +154,13 @@ health_concerns, follow_up_needed, follow_up_note
 |---|---|---|---|
 | `start` | metadata and `image_paths` | create batch, ingest images, run vision/text extraction | `pending_review` or `failed` |
 | `status` | `job_id` | load batch and records | current full review payload |
-| `review` | one or more `{record_id, final_fields, reviewer?}` | call `review_record`; persist corrections | record(s) reviewed; batch becomes `confirmed` when all are reviewed |
+| `review` | `confirm_all: true` after unchanged confirmation, or one or more `{record_id, final_fields, reviewer?}` with corrections | resolve complete final fields, call `review_record`, and persist corrections | record(s) reviewed; batch becomes `confirmed` when all are reviewed |
 | `export` | `job_id` | export reviewed rows through original Excel writer | absolute `.xlsx` artifact, native state `exported` |
 
 Review submits the complete 13-field `final_fields` dictionary for each record,
-not a partial patch. This preserves CareFlow's correction logging.
+not a partial patch. For an unchanged confirmation, the MCP copies each complete
+unreviewed dictionary from its durable job result. This preserves CareFlow's
+correction logging while avoiding caller-side reconstruction.
 
 The original export rule is intentionally preserved: export is allowed when at
 least one record has been reviewed, and it includes reviewed records only. It

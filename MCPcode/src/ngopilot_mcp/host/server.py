@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import Tool as MCPTool
 
 from ..config import Settings, load_settings
 from ..shared.runtime import Runtime
@@ -12,11 +13,32 @@ from .registry import load_tools
 from .router import Router
 
 
+class ManifestFastMCP(FastMCP):
+    """FastMCP server that advertises optional tool-owned input schemas."""
+
+    def __init__(
+        self,
+        *args: Any,
+        tool_input_schemas: dict[str, dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._tool_input_schemas = tool_input_schemas or {}
+
+    async def list_tools(self) -> list[MCPTool]:
+        tools = await super().list_tools()
+        for tool in tools:
+            schema = self._tool_input_schemas.get(tool.name)
+            if schema is not None:
+                tool.inputSchema = schema
+        return tools
+
+
 def create_server(settings: Settings | None = None) -> FastMCP:
     resolved = settings or load_settings()
     tools = load_tools()
     router = Router(Runtime(resolved), tools)
-    server = FastMCP(
+    server = ManifestFastMCP(
         "NGOPilotMCP",
         instructions=(
             "Use the tool matching the file role. Start a job, then call the "
@@ -24,6 +46,11 @@ def create_server(settings: Settings | None = None) -> FastMCP:
             "or publication operations."
         ),
         log_level="ERROR",
+        tool_input_schemas={
+            item.manifest.name: item.manifest.input_schema
+            for item in tools
+            if item.manifest.input_schema is not None
+        },
     )
 
     def make_invoker(tool_name: str):

@@ -2,11 +2,34 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ngopilot_mcp.shared.errors import ToolError
 
 ALLOWED_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+
+
+def resolve_batch_title(
+    title: str | None,
+    *,
+    visit_date: str | None,
+    source_paths: list[Path],
+) -> str:
+    """Resolve optional display metadata without making the caller invent it."""
+
+    if title is not None:
+        return title.strip()
+    if visit_date is not None:
+        return f"{visit_date} volunteer visits"
+
+    if len(source_paths) == 1:
+        cleaned_stem = re.sub(r"[_-]+", " ", source_paths[0].stem)
+        cleaned_stem = " ".join(cleaned_stem.split())
+        if cleaned_stem:
+            return cleaned_stem
+
+    return f"Volunteer visits ({len(source_paths)} forms)"
 
 
 def _invalid(path: Path, reason: str) -> ToolError:

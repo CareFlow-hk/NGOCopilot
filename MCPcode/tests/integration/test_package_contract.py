@@ -51,15 +51,52 @@ async def test_fastmcp_advertises_exactly_four_tools(tmp_path: Path) -> None:
 
     assert tuple(tool.name for tool in tools) == EXPECTED_TOOLS
     for tool in tools:
+        assert "absolute" in (tool.description or "").lower() or tool.name == (
+            "careflow_government_forms"
+        )
+
+    paper_forms = next(
+        tool for tool in tools if tool.name == "careflow_paper_forms_to_excel"
+    )
+    assert "title and other metadata are optional" in (paper_forms.description or "")
+    assert "input.confirm_all=true" in (paper_forms.description or "")
+    assert "artifacts[0].path" in (paper_forms.description or "")
+    assert paper_forms.inputSchema["type"] == "object"
+    assert set(paper_forms.inputSchema["properties"]["operation"]["enum"]) == {
+        "start",
+        "status",
+        "review",
+        "export",
+    }
+    assert "image_paths" in paper_forms.inputSchema["properties"]["input"][
+        "properties"
+    ]
+    reviews = paper_forms.inputSchema["properties"]["input"]["properties"]["reviews"]
+    assert set(reviews["items"]["properties"]["final_fields"]["required"]) == {
+        "elder_name",
+        "elder_age",
+        "elder_gender",
+        "elder_phone",
+        "elder_address",
+        "living_alone",
+        "visit_date",
+        "volunteer_name",
+        "duration_minutes",
+        "mood",
+        "health_concerns",
+        "follow_up_needed",
+        "follow_up_note",
+    }
+
+    for tool in tools:
+        if tool.name == paper_forms.name:
+            continue
         assert set(tool.inputSchema["properties"]) == {
             "operation",
             "job_id",
             "request_id",
             "input",
         }
-        assert "absolute" in (tool.description or "").lower() or tool.name == (
-            "careflow_government_forms"
-        )
 
 
 def test_tool_sources_have_no_cross_tool_or_host_native_imports() -> None:

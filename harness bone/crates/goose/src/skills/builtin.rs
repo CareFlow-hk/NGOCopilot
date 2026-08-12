@@ -62,5 +62,9 @@ mod tests {
             .expect("missing paper forms skill");
         assert!(paper_forms.contains("promoted `artifacts[0].path`"));
         assert!(paper_forms.contains("[Download batch.xlsx]"));
+        assert!(paper_forms.contains("\"image_paths\": [\"/absolute/form-01.jpg\"]"));
+        assert!(paper_forms.contains("tool generates a title when omitted"));
+        assert!(paper_forms.contains("{\"confirm_all\": true}"));
+        assert!(paper_forms.contains("do not ask for a second export"));
     }
 }

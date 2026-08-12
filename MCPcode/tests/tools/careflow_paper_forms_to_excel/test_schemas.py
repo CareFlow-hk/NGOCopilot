@@ -7,6 +7,7 @@ from ngopilot_mcp.tools.careflow_paper_forms_to_excel.schemas import (
     FIELD_KEYS,
     ReviewCall,
     StartCall,
+    public_input_schema,
     validate_request,
 )
 
@@ -35,6 +36,41 @@ def test_start_schema_is_strict_and_preserves_native_values() -> None:
     assert isinstance(request, StartCall)
     assert request.input.visit_date == "2026-08-02"
     assert request.input.auto_complete is False
+
+
+def test_start_requires_only_image_paths() -> None:
+    request = validate_request(
+        {
+            "operation": "start",
+            "input": {"image_paths": ["/tmp/form-01.jpg"]},
+        }
+    )
+
+    assert isinstance(request, StartCall)
+    assert request.input.title is None
+    assert request.input.auto_complete is False
+
+
+def test_public_schema_explains_every_operation_and_review_field() -> None:
+    schema = public_input_schema()
+
+    assert schema["type"] == "object"
+    assert schema["required"] == ["operation"]
+    assert set(schema["properties"]["operation"]["enum"]) == {
+        "start",
+        "status",
+        "review",
+        "export",
+    }
+    input_schema = schema["properties"]["input"]
+    assert "absolute paths" in input_schema["properties"]["image_paths"][
+        "description"
+    ].lower()
+    assert "optional" in input_schema["properties"]["title"]["description"].lower()
+    final_fields = input_schema["properties"]["reviews"]["items"]["properties"][
+        "final_fields"
+    ]
+    assert set(final_fields["required"]) == set(FIELD_KEYS)
 
 
 @pytest.mark.parametrize(
@@ -97,6 +133,8 @@ def test_review_accepts_complete_fields_and_rejects_extra_field() -> None:
         }
     )
     assert isinstance(request, ReviewCall)
+    assert request.input.confirm_all is False
+    assert request.input.reviews is not None
     assert tuple(request.input.reviews[0].final_fields.model_dump()) == FIELD_KEYS
 
     fields = _final_fields()
@@ -119,5 +157,43 @@ def test_review_rejects_duplicate_record_ids() -> None:
                 "operation": "review",
                 "job_id": "job-1",
                 "input": {"reviews": [item, item]},
+            }
+        )
+
+
+def test_review_accepts_confirm_all_as_compact_confirmation() -> None:
+    request = validate_request(
+        {
+            "operation": "review",
+            "job_id": "job-1",
+            "input": {"confirm_all": True},
+        }
+    )
+
+    assert isinstance(request, ReviewCall)
+    assert request.input.confirm_all is True
+    assert request.input.reviews is None
+
+
+@pytest.mark.parametrize(
+    "input_payload",
+    [
+        {},
+        {"confirm_all": False},
+        {
+            "confirm_all": True,
+            "reviews": [{"record_id": 9, "final_fields": _final_fields()}],
+        },
+    ],
+)
+def test_review_requires_exactly_one_review_mode(
+    input_payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        validate_request(
+            {
+                "operation": "review",
+                "job_id": "job-1",
+                "input": input_payload,
             }
         )

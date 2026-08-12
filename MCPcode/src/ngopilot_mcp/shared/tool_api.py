@@ -15,6 +15,7 @@ class ToolManifest:
     description: str
     worker: WorkerName
     operations: tuple[str, ...]
+    input_schema: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)

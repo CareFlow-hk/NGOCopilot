@@ -167,7 +167,6 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
                 operation="start",
                 request_id="start-1",
                 input={
-                    "title": "Volunteer visits",
                     "image_paths": [str(source.resolve())],
                     "visit_date": "2026-08-02",
                     "auto_complete": False,
@@ -181,6 +180,8 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
     assert runtime.staged[0]["role"] == "completed_form_image_001"
     assert runtime.staged[0]["content_kind"] == "image"
     worker_payload = runtime.worker_calls[0]["payload"]
+    assert runtime.job.input_payload["title"] == "2026-08-02 volunteer visits"
+    assert worker_payload["title"] == "2026-08-02 volunteer visits"
     assert worker_payload["image_paths"] == [
         str((tmp_path / "runtime/inputs/completed_form_image_001.jpg").resolve())
     ]
@@ -190,6 +191,27 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
         == worker_payload["image_paths"][0]
     )
     assert execution.native_refs["batch_id"] == 41
+
+
+def test_start_derives_title_from_single_filename_when_metadata_is_omitted(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "kowloon_team_7.jpg"
+    _write_jpeg(source)
+    runtime = FakeRuntime(tmp_path / "runtime", {"start": _worker_snapshot()})
+
+    asyncio.run(
+        CONTROLLER.execute(
+            ToolCall(
+                operation="start",
+                input={"image_paths": [str(source.resolve())]},
+            ),
+            runtime,
+        )
+    )
+
+    assert runtime.job.input_payload["title"] == "kowloon team 7"
+    assert runtime.worker_calls[0]["payload"]["title"] == "kowloon team 7"
 
 
 def test_review_routes_complete_fields_and_preserves_native_result(
@@ -229,6 +251,39 @@ def test_review_routes_complete_fields_and_preserves_native_result(
     assert payload["native_batch_id"] == 41
     assert tuple(payload["reviews"][0]["final_fields"]) == FIELD_KEYS
     assert execution.result["records"][0]["source_path"] == "/staged/form.jpg"
+
+
+def test_confirm_all_copies_complete_unreviewed_values_from_job(tmp_path: Path) -> None:
+    response = _worker_snapshot("confirmed")
+    response["result"]["reviewed_record_ids"] = [101]
+    runtime = FakeRuntime(tmp_path, {"review": response})
+    runtime.job.native_refs = {"batch_id": 41, "record_ids": [101]}
+    runtime.job.result = {
+        "records": [
+            {
+                "id": 101,
+                "is_reviewed": False,
+                "final_fields": {**_final_fields(), "elder_name": "Chan Tai Man"},
+            }
+        ]
+    }
+
+    execution = asyncio.run(
+        CONTROLLER.execute(
+            ToolCall(
+                operation="review",
+                job_id=runtime.job.job_id,
+                input={"confirm_all": True},
+            ),
+            runtime,
+        )
+    )
+
+    assert execution.state == "reviewed"
+    review = runtime.worker_calls[0]["payload"]["reviews"][0]
+    assert review["record_id"] == 101
+    assert review["final_fields"]["elder_name"] == "Chan Tai Man"
+    assert tuple(review["final_fields"]) == FIELD_KEYS
 
 
 def test_review_rejects_a_record_from_another_job_before_native_call(
@@ -295,6 +350,72 @@ def test_partial_export_promotes_native_workbook_and_returns_owned_path(
     assert "download_url" not in execution.result["export"]
     assert execution.artifacts[0].native_path == str(native_path)
     assert Path(execution.artifacts[0].path).exists()
+
+
+def test_minimal_start_confirm_all_export_lifecycle(tmp_path: Path) -> None:
+    source = tmp_path / "volunteer_visit.jpg"
+    _write_jpeg(source)
+    final_fields = {**_final_fields(), "elder_name": "Chan Tai Man"}
+
+    start_response = _worker_snapshot()
+    start_response["result"]["records"][0]["final_fields"] = final_fields
+
+    review_response = _worker_snapshot("confirmed")
+    review_response["result"]["records"][0]["final_fields"] = final_fields
+
+    native_path = (tmp_path / "careflow-data" / "batch_41.xlsx").resolve()
+    native_path.parent.mkdir(parents=True)
+    _write_workbook(native_path)
+    export_response = _worker_snapshot("exported")
+    export_response["result"]["records"][0]["final_fields"] = final_fields
+    export_response["result"].update(
+        {
+            "exported_row_count": 1,
+            "export": {"batch_id": 41, "row_count": 1},
+        }
+    )
+    export_response["artifact_path"] = str(native_path)
+
+    runtime = FakeRuntime(
+        tmp_path / "mcp",
+        {
+            "start": start_response,
+            "review": review_response,
+            "export": export_response,
+        },
+    )
+
+    started = asyncio.run(
+        CONTROLLER.execute(
+            ToolCall(
+                operation="start",
+                input={"image_paths": [str(source.resolve())]},
+            ),
+            runtime,
+        )
+    )
+    reviewed = asyncio.run(
+        CONTROLLER.execute(
+            ToolCall(
+                operation="review",
+                job_id=started.job_id,
+                input={"confirm_all": True},
+            ),
+            runtime,
+        )
+    )
+    exported = asyncio.run(
+        CONTROLLER.execute(
+            ToolCall(operation="export", job_id=started.job_id),
+            runtime,
+        )
+    )
+
+    assert started.next_operations == ["status", "review"]
+    assert reviewed.next_operations == ["status", "review", "export"]
+    assert exported.state == "exported"
+    assert exported.artifacts[0].kind == "volunteer_forms_excel"
+    assert Path(exported.artifacts[0].path).is_file()
 
 
 def test_tool_package_has_no_cross_tool_imports() -> None:

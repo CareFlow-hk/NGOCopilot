@@ -16,7 +16,14 @@ from .artifacts import (
     validate_excel_artifact,
 )
 from .manifest import MANIFEST
-from .schemas import ExportCall, ReviewCall, StartCall, StatusCall, validate_request
+from .schemas import (
+    ExportCall,
+    FinalFields,
+    ReviewCall,
+    StartCall,
+    StatusCall,
+    validate_request,
+)
 from .state import (
     add_source_paths,
     native_batch_id,
@@ -25,7 +32,12 @@ from .state import (
     record_ids,
     unpack_worker_result,
 )
-from .validation import ALLOWED_IMAGE_EXTENSIONS, start_warnings, validate_image_source
+from .validation import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    resolve_batch_title,
+    start_warnings,
+    validate_image_source,
+)
 
 
 def _validation_error(error: ValidationError) -> InvalidRequestError:
@@ -91,6 +103,11 @@ class PaperFormsToExcelController:
             validate_image_source(path) for path in request.input.image_paths
         ]
         public_input = request.input.model_dump(mode="json")
+        public_input["title"] = resolve_batch_title(
+            request.input.title,
+            visit_date=request.input.visit_date,
+            source_paths=source_paths,
+        )
         job = runtime.create_job(
             tool_name=MANIFEST.name,
             request_id=request.request_id,
@@ -120,7 +137,7 @@ class PaperFormsToExcelController:
                 )
 
             native_payload = {
-                "title": request.input.title,
+                "title": public_input["title"],
                 "image_paths": [str(path) for path in staged_paths],
                 "original_filenames": [path.name for path in source_paths],
                 "volunteer_team": request.input.volunteer_team,
@@ -184,7 +201,19 @@ class PaperFormsToExcelController:
             raise InvalidRequestError("This job has no CareFlow batch to review.")
 
         known_ids = set(getattr(job, "native_refs", {}).get("record_ids", []))
-        requested_ids = {review.record_id for review in request.input.reviews}
+        reviews = (
+            self._confirmed_reviews(job)
+            if request.input.confirm_all
+            else [
+                {
+                    "record_id": review.record_id,
+                    "final_fields": review.final_fields.model_dump(mode="json"),
+                    "reviewer": review.reviewer,
+                }
+                for review in request.input.reviews or []
+            ]
+        )
+        requested_ids = {review["record_id"] for review in reviews}
         unknown_ids = sorted(requested_ids - known_ids) if known_ids else []
         if unknown_ids:
             raise InvalidRequestError(
@@ -194,14 +223,7 @@ class PaperFormsToExcelController:
 
         payload = {
             "native_batch_id": batch_id,
-            "reviews": [
-                {
-                    "record_id": review.record_id,
-                    "final_fields": review.final_fields.model_dump(mode="json"),
-                    "reviewer": review.reviewer,
-                }
-                for review in request.input.reviews
-            ],
+            "reviews": reviews,
         }
         return await self._native_operation(
             request=request,
@@ -209,6 +231,46 @@ class PaperFormsToExcelController:
             job=job,
             payload=payload,
         )
+
+    @staticmethod
+    def _confirmed_reviews(job: Any) -> list[dict[str, Any]]:
+        result = getattr(job, "result", {})
+        records = result.get("records", []) if isinstance(result, dict) else []
+        reviews: list[dict[str, Any]] = []
+        invalid_record_ids: list[Any] = []
+
+        for record in records if isinstance(records, list) else []:
+            if not isinstance(record, dict) or record.get("is_reviewed") is True:
+                continue
+            record_id = record.get("id")
+            try:
+                final_fields = FinalFields.model_validate(
+                    record.get("final_fields"), strict=True
+                )
+            except ValidationError:
+                invalid_record_ids.append(record_id)
+                continue
+            if not isinstance(record_id, int) or isinstance(record_id, bool):
+                invalid_record_ids.append(record_id)
+                continue
+            reviews.append(
+                {
+                    "record_id": record_id,
+                    "final_fields": final_fields.model_dump(mode="json"),
+                    "reviewer": None,
+                }
+            )
+
+        if invalid_record_ids:
+            raise InvalidRequestError(
+                "One or more records do not contain a complete final_fields object.",
+                details={"record_ids": invalid_record_ids},
+            )
+        if not reviews:
+            raise InvalidRequestError(
+                "This job has no unreviewed records to confirm. Check next_operations."
+            )
+        return reviews
 
     async def _export(self, request: ExportCall, runtime: ToolRuntime) -> ToolExecution:
         job = runtime.get_job(tool_name=MANIFEST.name, job_id=request.job_id)
