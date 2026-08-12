@@ -127,9 +127,39 @@ function replaceArtifactTextNodes(
   });
 }
 
+function isArtifactLinkNode(node: MarkdownAstNode): boolean {
+  return node.type === 'link' && typeof node.url === 'string' && isArtifactPath(node.url);
+}
+
+function nodeText(node: MarkdownAstNode): string {
+  if (node.type === 'text') return node.value ?? '';
+  return node.children?.map(nodeText).join('') ?? '';
+}
+
+function removeArtifactPathLabels(node: MarkdownAstNode): void {
+  if (!node.children) return;
+
+  for (const child of node.children) removeArtifactPathLabels(child);
+
+  if (node.type !== 'paragraph') return;
+  const artifactLinks = node.children.filter(isArtifactLinkNode);
+  if (artifactLinks.length !== 1) return;
+
+  const nonLinkText = node.children
+    .filter((child) => !isArtifactLinkNode(child))
+    .map(nodeText)
+    .join('')
+    .trim();
+  if (/^(?:local\s+)?path\s*:?$/i.test(nonLinkText)) {
+    node.children = artifactLinks;
+  }
+}
+
 const remarkArtifactLinks = (options?: { source?: string }) => (tree: unknown) => {
   if (artifactDownloadsEnabled()) {
-    replaceArtifactTextNodes(tree as MarkdownAstNode, findArtifactPaths(options?.source ?? ''));
+    const markdownTree = tree as MarkdownAstNode;
+    replaceArtifactTextNodes(markdownTree, findArtifactPaths(options?.source ?? ''));
+    removeArtifactPathLabels(markdownTree);
   }
 };
 

@@ -34,7 +34,7 @@ describe('MarkdownContent', () => {
         const link = await screen.findByRole('link', { name: 'Download visit report.xlsx' });
 
         expect(link).toHaveAttribute('href', path);
-        expect(link).toHaveTextContent('Download visit report.xlsx');
+        expect(link).toHaveTextContent('Download result');
         expect(link).toHaveClass('min-h-12', 'px-4', 'py-3', 'bg-cinnabar-600');
         expect(container).not.toHaveTextContent(path);
 
@@ -43,6 +43,29 @@ describe('MarkdownContent', () => {
       } finally {
         window.appConfig = originalAppConfig;
         window.electron.openExternal = originalOpenExternal;
+      }
+    });
+
+    it('removes a standalone path label and wraps the artifact as a result action', async () => {
+      const path =
+        '/data/tenants/user/workflow/jobs/job-1/outputs/150b0f26f219_batch_9_20260812_044802.xlsx';
+      const originalAppConfig = window.appConfig;
+      window.appConfig = {
+        ...originalAppConfig,
+        get: vi.fn((key: string) => (key === 'NGOPILOT_CLOUD' ? true : undefined)),
+      };
+
+      try {
+        const { container } = renderWithIntl(<MarkdownContent content={`**Path:** ${path}`} />);
+        const link = await screen.findByRole('link', {
+          name: 'Download 150b0f26f219_batch_9_20260812_044802.xlsx',
+        });
+
+        expect(link).toHaveTextContent('Download result');
+        expect(container).not.toHaveTextContent('Path:');
+        expect(container).not.toHaveTextContent('150b0f26f219_batch_9_20260812_044802.xlsx');
+      } finally {
+        window.appConfig = originalAppConfig;
       }
     });
 

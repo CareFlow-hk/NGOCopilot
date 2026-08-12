@@ -13,6 +13,10 @@ const i18n = defineMessages({
     id: 'artifactPathLink.download',
     defaultMessage: 'Download {filename}',
   },
+  downloadResult: {
+    id: 'artifactPathLink.downloadResult',
+    defaultMessage: 'Download result',
+  },
   preparing: {
     id: 'artifactPathLink.preparing',
     defaultMessage: 'Preparing download...',
@@ -99,9 +103,7 @@ export function ArtifactPathLink({
       <span className={compact ? 'truncate' : 'min-w-0 overflow-wrap-anywhere text-left'}>
         {isDownloading
           ? intl.formatMessage(i18n.preparing)
-          : intl.formatMessage(i18n.download, {
-              filename: children ?? filename,
-            })}
+          : intl.formatMessage(i18n.downloadResult)}
       </span>
     </a>
   );
