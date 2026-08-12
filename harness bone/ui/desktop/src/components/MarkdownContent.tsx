@@ -81,6 +81,7 @@ interface CodeProps extends React.ClassAttributes<HTMLElement>, React.HTMLAttrib
 interface MarkdownContentProps {
   content: string;
   className?: string;
+  artifactPresentation?: 'none' | 'compact' | 'result';
 }
 
 interface MarkdownAstNode {
@@ -155,13 +156,14 @@ function removeArtifactPathLabels(node: MarkdownAstNode): void {
   }
 }
 
-const remarkArtifactLinks = (options?: { source?: string }) => (tree: unknown) => {
-  if (artifactDownloadsEnabled()) {
-    const markdownTree = tree as MarkdownAstNode;
-    replaceArtifactTextNodes(markdownTree, findArtifactPaths(options?.source ?? ''));
-    removeArtifactPathLabels(markdownTree);
-  }
-};
+const remarkArtifactLinks =
+  (options?: { source?: string; removePathLabels?: boolean }) => (tree: unknown) => {
+    if (artifactDownloadsEnabled()) {
+      const markdownTree = tree as MarkdownAstNode;
+      replaceArtifactTextNodes(markdownTree, findArtifactPaths(options?.source ?? ''));
+      if (options?.removePathLabels) removeArtifactPathLabels(markdownTree);
+    }
+  };
 
 // Memoized CodeBlock component to prevent re-rendering when props haven't changed
 const CodeBlock = memo(function CodeBlock({
@@ -258,12 +260,24 @@ const CodeBlock = memo(function CodeBlock({
 
 const MarkdownCode = memo(
   React.forwardRef(function MarkdownCode(
-    { inline, className, children, ...props }: CodeProps,
+    {
+      inline,
+      className,
+      children,
+      artifactPresentation = 'none',
+      ...props
+    }: CodeProps & { artifactPresentation?: 'none' | 'compact' | 'result' },
     ref: React.Ref<HTMLElement>
   ) {
     const match = /language-(\w+)/.exec(className || '');
-    if (artifactDownloadsEnabled() && isArtifactPath(String(children))) {
-      return <ArtifactPathLink path={String(children)} />;
+    if (
+      artifactPresentation !== 'none' &&
+      artifactDownloadsEnabled() &&
+      isArtifactPath(String(children))
+    ) {
+      return (
+        <ArtifactPathLink path={String(children)} compact={artifactPresentation === 'compact'} />
+      );
     }
 
     return !inline && match ? (
@@ -294,6 +308,7 @@ const customUrlTransform = (url: string): string => {
 const MarkdownContent = memo(function MarkdownContent({
   content,
   className = '',
+  artifactPresentation = 'none',
 }: MarkdownContentProps) {
   const intl = useIntl();
   const [processedContent, setProcessedContent] = useState(content);
@@ -330,6 +345,26 @@ const MarkdownContent = memo(function MarkdownContent({
     setPendingLink(null);
   }, []);
 
+  const remarkPlugins = useMemo<
+    NonNullable<React.ComponentProps<typeof ReactMarkdown>['remarkPlugins']>
+  >(() => {
+    const plugins: NonNullable<React.ComponentProps<typeof ReactMarkdown>['remarkPlugins']> = [
+      remarkGfm,
+      remarkBreaks,
+      [remarkMath, { singleDollarTextMath: false }],
+    ];
+    if (artifactPresentation !== 'none') {
+      plugins.push([
+        remarkArtifactLinks,
+        {
+          source: processedContent,
+          removePathLabels: artifactPresentation === 'result',
+        },
+      ]);
+    }
+    return plugins;
+  }, [artifactPresentation, processedContent]);
+
   return (
     <>
       <div
@@ -352,12 +387,7 @@ const MarkdownContent = memo(function MarkdownContent({
       >
         <ReactMarkdown
           urlTransform={customUrlTransform}
-          remarkPlugins={[
-            remarkGfm,
-            remarkBreaks,
-            [remarkMath, { singleDollarTextMath: false }],
-            [remarkArtifactLinks, { source: processedContent }],
-          ]}
+          remarkPlugins={remarkPlugins}
           rehypePlugins={[
             [
               rehypeKatex,
@@ -370,8 +400,17 @@ const MarkdownContent = memo(function MarkdownContent({
           ]}
           components={{
             a: (props) => {
-              if (props.href && artifactDownloadsEnabled() && isArtifactPath(props.href)) {
-                return <ArtifactPathLink path={props.href}>{props.children}</ArtifactPathLink>;
+              if (
+                artifactPresentation !== 'none' &&
+                props.href &&
+                artifactDownloadsEnabled() &&
+                isArtifactPath(props.href)
+              ) {
+                return (
+                  <ArtifactPathLink path={props.href} compact={artifactPresentation === 'compact'}>
+                    {props.children}
+                  </ArtifactPathLink>
+                );
               }
               return (
                 <a
@@ -394,7 +433,9 @@ const MarkdownContent = memo(function MarkdownContent({
                 />
               );
             },
-            code: MarkdownCode,
+            code: (props) => (
+              <MarkdownCode {...props} artifactPresentation={artifactPresentation} />
+            ),
           }}
         >
           {processedContent}

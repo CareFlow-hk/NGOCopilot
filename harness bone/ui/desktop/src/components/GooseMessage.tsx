@@ -32,6 +32,7 @@ interface GooseMessageProps {
   toolCallNotifications: Map<string, NotificationEvent[]>;
   append: (value: string) => void;
   isStreaming: boolean;
+  isLastUserVisibleMessage: boolean;
   submitElicitationResponse?: (
     elicitationId: string,
     userData: Record<string, unknown>
@@ -45,6 +46,7 @@ export default function GooseMessage({
   toolCallNotifications,
   append,
   isStreaming,
+  isLastUserVisibleMessage,
   submitElicitationResponse,
 }: GooseMessageProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -55,6 +57,8 @@ export default function GooseMessage({
   const timestamp = useMemo(() => formatMessageTimestamp(message.created), [message.created]);
   const toolRequests = getToolRequests(message);
   const messageIndex = messages.findIndex((msg) => msg.id === message.id);
+  const isFinalAssistantResult =
+    !isStreaming && toolRequests.length === 0 && isLastUserVisibleMessage;
   const toolConfirmationContent = getToolConfirmationContent(message);
   const elicitationContent = getElicitationContent(message);
 
@@ -138,7 +142,10 @@ export default function GooseMessage({
           <div className="flex flex-col group">
             {displayText.trim() && (
               <div ref={contentRef} className="agent-message-bubble w-full">
-                <MarkdownContent content={displayText} />
+                <MarkdownContent
+                  content={displayText}
+                  artifactPresentation={isFinalAssistantResult ? 'result' : 'compact'}
+                />
               </div>
             )}
 

@@ -103,7 +103,9 @@ export function ArtifactPathLink({
       <span className={compact ? 'truncate' : 'min-w-0 overflow-wrap-anywhere text-left'}>
         {isDownloading
           ? intl.formatMessage(i18n.preparing)
-          : intl.formatMessage(i18n.downloadResult)}
+          : compact
+            ? intl.formatMessage(i18n.download, { filename: children ?? filename })
+            : intl.formatMessage(i18n.downloadResult)}
       </span>
     </a>
   );
@@ -121,7 +123,9 @@ export function ArtifactText({ text }: { text: string }) {
   let cursor = 0;
   for (const match of matches) {
     if (match.start > cursor) content.push(text.slice(cursor, match.start));
-    content.push(<ArtifactPathLink key={`${match.start}:${match.path}`} path={match.path} />);
+    content.push(
+      <ArtifactPathLink key={`${match.start}:${match.path}`} path={match.path} compact />
+    );
     cursor = match.end;
   }
   if (cursor < text.length) content.push(text.slice(cursor));

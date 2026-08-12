@@ -29,7 +29,7 @@ describe('MarkdownContent', () => {
 
       try {
         const { container } = renderWithIntl(
-          <MarkdownContent content={`Exported file:\n${path}`} />
+          <MarkdownContent content={`Exported file:\n${path}`} artifactPresentation="result" />
         );
         const link = await screen.findByRole('link', { name: 'Download visit report.xlsx' });
 
@@ -56,7 +56,9 @@ describe('MarkdownContent', () => {
       };
 
       try {
-        const { container } = renderWithIntl(<MarkdownContent content={`**Path:** ${path}`} />);
+        const { container } = renderWithIntl(
+          <MarkdownContent content={`**Path:** ${path}`} artifactPresentation="result" />
+        );
         const link = await screen.findByRole('link', {
           name: 'Download 150b0f26f219_batch_9_20260812_044802.xlsx',
         });
@@ -64,6 +66,57 @@ describe('MarkdownContent', () => {
         expect(link).toHaveTextContent('Download result');
         expect(container).not.toHaveTextContent('Path:');
         expect(container).not.toHaveTextContent('150b0f26f219_batch_9_20260812_044802.xlsx');
+      } finally {
+        window.appConfig = originalAppConfig;
+      }
+    });
+
+    it('keeps intermediate artifact paths compact and visibly identified', async () => {
+      const path = '/data/tenants/user/workflow/jobs/job-1/outputs/intermediate_review.xlsx';
+      const originalAppConfig = window.appConfig;
+      window.appConfig = {
+        ...originalAppConfig,
+        get: vi.fn((key: string) => (key === 'NGOPILOT_CLOUD' ? true : undefined)),
+      };
+
+      try {
+        const { container } = renderWithIntl(
+          <MarkdownContent content={`**Path:** ${path}`} artifactPresentation="compact" />
+        );
+        const link = await screen.findByRole('link', {
+          name: 'Download intermediate_review.xlsx',
+        });
+
+        expect(link).toHaveTextContent('Download intermediate_review.xlsx');
+        expect(link).toHaveClass('px-2', 'py-1', 'text-xs');
+        expect(link).not.toHaveClass('min-h-12', 'bg-cinnabar-600');
+        expect(container).toHaveTextContent('Path:');
+      } finally {
+        window.appConfig = originalAppConfig;
+      }
+    });
+
+    it('leaves artifact paths in user-facing input text unwrapped by default', async () => {
+      const paths = [
+        '/data/tenants/user/workflow/inputs/form-01.jpg',
+        '/data/tenants/user/workflow/inputs/form-02.jpg',
+      ];
+      const originalAppConfig = window.appConfig;
+      window.appConfig = {
+        ...originalAppConfig,
+        get: vi.fn((key: string) => (key === 'NGOPILOT_CLOUD' ? true : undefined)),
+      };
+
+      try {
+        const content = `Attachments:\n${JSON.stringify(paths)}`;
+        const { container } = renderWithIntl(
+          <MarkdownContent content={content} artifactPresentation="compact" />
+        );
+
+        expect(container).toHaveTextContent(paths[0]);
+        expect(container).toHaveTextContent(paths[1]);
+        expect(container.querySelector('[data-artifact-path]')).not.toBeInTheDocument();
+        expect(container).not.toHaveTextContent('Download result');
       } finally {
         window.appConfig = originalAppConfig;
       }
@@ -103,7 +156,9 @@ describe('MarkdownContent', () => {
       window.electron.openExternal = openExternal;
 
       try {
-        const { container } = renderWithIntl(<MarkdownContent content={content} />);
+        const { container } = renderWithIntl(
+          <MarkdownContent content={content} artifactPresentation="compact" />
+        );
         const link = await screen.findByRole('link', {
           name: 'Download batch_4_20260806_135134.xlsx',
         });
@@ -131,7 +186,12 @@ describe('MarkdownContent', () => {
       window.electron.openExternal = openExternal;
 
       try {
-        renderWithIntl(<MarkdownContent content={`**File ready:** \`${artifactPath}\``} />);
+        renderWithIntl(
+          <MarkdownContent
+            content={`**File ready:** \`${artifactPath}\``}
+            artifactPresentation="compact"
+          />
+        );
         const link = await screen.findByRole('link', {
           name: 'Download ff3f0f660050_batch_4_20260806_135134.xlsx',
         });

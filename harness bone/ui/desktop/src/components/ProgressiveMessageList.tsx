@@ -307,6 +307,9 @@ export default function ProgressiveMessageList({
                   messages={messages}
                   append={append}
                   toolCallNotifications={toolCallNotifications}
+                  isLastUserVisibleMessage={
+                    !messages.slice(index + 1).some((candidate) => candidate.metadata.userVisible)
+                  }
                   isStreaming={
                     isStreamingMessage &&
                     !isUser &&

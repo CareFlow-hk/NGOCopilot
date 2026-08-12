@@ -29,7 +29,7 @@ export default function ThinkingContent({ content, isExpanded }: ThinkingContent
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-1 ml-[18px] text-xs text-text-secondary italic">
-          <MarkdownContent content={content} />
+          <MarkdownContent content={content} artifactPresentation="compact" />
         </div>
       </CollapsibleContent>
     </Collapsible>

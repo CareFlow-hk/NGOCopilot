@@ -963,6 +963,7 @@ function CodeModeView({ toolGraph, code }: CodeModeViewProps) {
             <MarkdownContent
               content={'```typescript\n' + code + '\n```'}
               className="whitespace-pre-wrap max-w-full overflow-x-auto"
+              artifactPresentation="compact"
             />
           </ToolCallExpandable>
         </div>
