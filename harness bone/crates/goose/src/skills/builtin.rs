@@ -64,7 +64,8 @@ mod tests {
         assert!(paper_forms.contains("[Download batch.xlsx]"));
         assert!(paper_forms.contains("\"image_paths\": [\"/absolute/form-01.jpg\"]"));
         assert!(paper_forms.contains("tool generates a title when omitted"));
-        assert!(paper_forms.contains("{\"confirm_all\": true}"));
-        assert!(paper_forms.contains("do not ask for a second export"));
+        assert!(paper_forms.contains("approved automatically"));
+        assert!(paper_forms.contains("do not ask the user for confirmation"));
+        assert!(paper_forms.contains("clickable `Download result` action"));
     }
 }

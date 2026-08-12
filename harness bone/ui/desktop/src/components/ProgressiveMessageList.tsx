@@ -35,6 +35,7 @@ import type {
 import LoadingGoose from './LoadingGoose';
 import { ChatType } from '../types/chat';
 import { identifyConsecutiveToolCalls, isInChain } from '../utils/toolCallChaining';
+import { isLastUserVisibleOutput } from '../utils/artifactPresentation';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
 
 const i18n = defineMessages({
@@ -307,9 +308,7 @@ export default function ProgressiveMessageList({
                   messages={messages}
                   append={append}
                   toolCallNotifications={toolCallNotifications}
-                  isLastUserVisibleMessage={
-                    !messages.slice(index + 1).some((candidate) => candidate.metadata.userVisible)
-                  }
+                  isLastUserVisibleOutput={isLastUserVisibleOutput(messages, index)}
                   isStreaming={
                     isStreamingMessage &&
                     !isUser &&

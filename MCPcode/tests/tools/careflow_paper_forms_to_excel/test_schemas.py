@@ -51,7 +51,7 @@ def test_start_requires_only_image_paths() -> None:
     assert request.input.auto_complete is False
 
 
-def test_public_schema_explains_every_operation_and_review_field() -> None:
+def test_public_schema_exposes_the_automatic_start_to_export_workflow() -> None:
     schema = public_input_schema()
 
     assert schema["type"] == "object"
@@ -59,7 +59,6 @@ def test_public_schema_explains_every_operation_and_review_field() -> None:
     assert set(schema["properties"]["operation"]["enum"]) == {
         "start",
         "status",
-        "review",
         "export",
     }
     input_schema = schema["properties"]["input"]
@@ -67,10 +66,9 @@ def test_public_schema_explains_every_operation_and_review_field() -> None:
         "description"
     ].lower()
     assert "optional" in input_schema["properties"]["title"]["description"].lower()
-    final_fields = input_schema["properties"]["reviews"]["items"]["properties"][
-        "final_fields"
-    ]
-    assert set(final_fields["required"]) == set(FIELD_KEYS)
+    assert "confirm_all" not in input_schema["properties"]
+    assert "reviews" not in input_schema["properties"]
+    assert "approved automatically" in input_schema["description"]
 
 
 @pytest.mark.parametrize(

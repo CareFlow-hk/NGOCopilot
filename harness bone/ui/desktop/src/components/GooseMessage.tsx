@@ -23,6 +23,7 @@ import MessageCopyLink from './MessageCopyLink';
 import MessageUsageStats from './MessageUsageStats';
 import { cn } from '../utils';
 import { identifyConsecutiveToolCalls, shouldHideTimestamp } from '../utils/toolCallChaining';
+import { artifactPresentationForMessage } from '../utils/artifactPresentation';
 
 interface GooseMessageProps {
   sessionId: string;
@@ -32,7 +33,7 @@ interface GooseMessageProps {
   toolCallNotifications: Map<string, NotificationEvent[]>;
   append: (value: string) => void;
   isStreaming: boolean;
-  isLastUserVisibleMessage: boolean;
+  isLastUserVisibleOutput: boolean;
   submitElicitationResponse?: (
     elicitationId: string,
     userData: Record<string, unknown>
@@ -46,7 +47,7 @@ export default function GooseMessage({
   toolCallNotifications,
   append,
   isStreaming,
-  isLastUserVisibleMessage,
+  isLastUserVisibleOutput,
   submitElicitationResponse,
 }: GooseMessageProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -56,9 +57,11 @@ export default function GooseMessage({
 
   const timestamp = useMemo(() => formatMessageTimestamp(message.created), [message.created]);
   const toolRequests = getToolRequests(message);
-  const messageIndex = messages.findIndex((msg) => msg.id === message.id);
-  const isFinalAssistantResult =
-    !isStreaming && toolRequests.length === 0 && isLastUserVisibleMessage;
+  const identityIndex = messages.indexOf(message);
+  const messageIndex =
+    identityIndex >= 0
+      ? identityIndex
+      : messages.findIndex((candidate) => message.id && candidate.id === message.id);
   const toolConfirmationContent = getToolConfirmationContent(message);
   const elicitationContent = getElicitationContent(message);
 
@@ -121,6 +124,13 @@ export default function GooseMessage({
     return responseMap;
   }, [messages, messageIndex, toolRequests]);
 
+  const artifactPresentation = artifactPresentationForMessage({
+    isStreaming,
+    isLastUserVisibleOutput,
+    toolRequestCount: toolRequests.length,
+    completedToolRequestCount: toolResponsesMap.size,
+  });
+
   const pendingConfirmationIds = getPendingToolConfirmationIds(messages);
 
   return (
@@ -144,7 +154,7 @@ export default function GooseMessage({
               <div ref={contentRef} className="agent-message-bubble w-full">
                 <MarkdownContent
                   content={displayText}
-                  artifactPresentation={isFinalAssistantResult ? 'result' : 'compact'}
+                  artifactPresentation={artifactPresentation}
                 />
               </div>
             )}

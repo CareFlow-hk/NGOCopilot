@@ -7,13 +7,14 @@ Pinned native dependency: CareFlow 0.4.8
 
 ## Implementation Record
 
-The independent eight-module tool package and its four public operations are
-implemented. Automated tests cover strict schemas, content-aware image
-validation, staged-path routing, exact CareFlow service-call boundaries,
-complete-field review routing, partial export, workbook verification/promotion,
-and import isolation. A real managed-CareFlow worker smoke completed
-`start -> review -> export` and promoted the native workbook into the MCP job.
-The full authored package suite currently passes with `125 passed`.
+The independent eight-module tool package is implemented. Automated tests cover
+strict schemas, content-aware image validation, staged-path routing, exact
+CareFlow service-call boundaries, automatic approval, compatibility review
+routing, export, workbook verification/promotion, and import isolation. A real
+managed-CareFlow worker smoke completed extraction, approval, and export and
+promoted the native workbook into the MCP job. The current public workflow is
+`start -> export`; `review` remains an internal compatibility operation.
+The full authored package suite currently passes with `138 passed`.
 
 This record does not claim exhaustive crash/restart injection or byte-for-byte
 golden workbook parity. Those remaining hardening items are identified
@@ -22,8 +23,8 @@ evidence.
 
 ## 1. Purpose and Scope
 
-This tool turns completed volunteer visit-form images into reviewed structured
-records and a native CareFlow Excel export.
+This tool turns completed volunteer visit-form images into automatically approved
+structured records and a native CareFlow Excel export.
 
 This document owns the detailed implementation contract for this tool. The
 top-level architecture intentionally contains only the cross-tool host and
@@ -152,10 +153,13 @@ health_concerns, follow_up_needed, follow_up_note
 
 | Operation | Required payload | Original effect | Result/next state |
 |---|---|---|---|
-| `start` | metadata and `image_paths` | create batch, ingest images, run vision/text extraction | `pending_review` or `failed` |
+| `start` | metadata and `image_paths` | create batch, ingest images, run vision/text extraction, approve complete extracted values through native `review_record` | `reviewed` or `failed` |
 | `status` | `job_id` | load batch and records | current full review payload |
-| `review` | `confirm_all: true` after unchanged confirmation, or one or more `{record_id, final_fields, reviewer?}` with corrections | resolve complete final fields, call `review_record`, and persist corrections | record(s) reviewed; batch becomes `confirmed` when all are reviewed |
-| `export` | `job_id` | export reviewed rows through original Excel writer | absolute `.xlsx` artifact, native state `exported` |
+| `export` | `job_id` | export automatically approved rows through original Excel writer | absolute `.xlsx` artifact, native state `exported` |
+
+`review` is retained as a non-advertised compatibility operation for explicit
+corrections and jobs created before automatic approval. It is not part of the
+normal agent workflow and must not create a user confirmation step.
 
 Review submits the complete 13-field `final_fields` dictionary for each record,
 not a partial patch. For an unchanged confirmation, the MCP copies each complete
@@ -184,7 +188,7 @@ worker, where `native_adapter.py` invokes only these existing service boundaries
 
 | Operation | Native boundary |
 |---|---|
-| `start` | `volunteer_form.create_batch`, then `add_photos`, then `run_extraction` |
+| `start` | `volunteer_form.create_batch`, then `add_photos`, `run_extraction`, and `review_record` for every complete extracted record |
 | `status` | load the mapped `VolunteerBatch` and its `VolunteerRecord` rows |
 | `review` | `volunteer_form.review_record` for each submitted record |
 | `export` | `excel_export.export_batch` for the mapped native batch |
@@ -204,8 +208,9 @@ generation logic of its own.
    worker through the shared runner.
 4. Invoke the native start chain in Section 5 and persist the batch ID plus all
    returned record IDs as native references.
-5. Snapshot the complete review payload under `intermediate/` or in
-   `jobs.sqlite3`, then project the native state as `pending_review` or `failed`.
+5. Approve every complete extracted record through CareFlow's native
+   `review_record`, snapshot the result under `intermediate/` or in
+   `jobs.sqlite3`, then project the native state as `reviewed` or `failed`.
 
 ### 6.2 `status`
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Paper Forms to Excel"
   short_description: "Convert completed form images into Excel"
-  default_prompt: "Use $careflow-paper-forms-to-excel to extract these completed form images, confirm the records with me, and return the reviewed Excel workbook."
+  default_prompt: "Use $careflow-paper-forms-to-excel to extract these completed form images and return the Excel workbook without a review step."

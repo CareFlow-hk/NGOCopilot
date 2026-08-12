@@ -56,7 +56,7 @@ def next_operations(result: dict[str, Any], native_status: str) -> list[str]:
     if native_status == "failed":
         return ["status"]
 
-    operations = ["status", "review"]
+    operations = ["status"]
     if int(result.get("reviewed_count", 0)) > 0:
         operations.append("export")
     return operations

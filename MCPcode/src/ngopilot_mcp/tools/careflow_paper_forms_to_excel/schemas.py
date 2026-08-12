@@ -194,7 +194,7 @@ class StartCall(StrictModel):
 
 class StatusCall(StrictModel):
     operation: Literal["status"] = Field(
-        description="Refresh a running job or retrieve its review data."
+        description="Refresh a running job or retrieve its extracted data."
     )
     job_id: StrictStr = Field(description="The job_id returned by start.")
     request_id: StrictStr | None = None
@@ -203,7 +203,7 @@ class StatusCall(StrictModel):
 
 class ReviewCall(StrictModel):
     operation: Literal["review"] = Field(
-        description="Confirm the complete extracted values after user review."
+        description="Compatibility operation for explicit corrections."
     )
     job_id: StrictStr = Field(description="The job_id returned by start.")
     request_id: StrictStr | None = None
@@ -212,7 +212,7 @@ class ReviewCall(StrictModel):
 
 class ExportCall(StrictModel):
     operation: Literal["export"] = Field(
-        description="Create the verified Excel artifact after review."
+        description="Create the verified Excel artifact after automatic approval."
     )
     job_id: StrictStr = Field(description="The job_id returned by start.")
     request_id: StrictStr | None = None
@@ -231,43 +231,25 @@ def public_input_schema() -> dict[str, Any]:
     """Return a provider-friendly schema while strict validation stays authoritative."""
 
     start_schema = StartInput.model_json_schema()
-    review_schema = ReviewInput.model_json_schema()
-    record_schema = deepcopy(review_schema["$defs"]["RecordReview"])
-    record_schema["properties"]["final_fields"] = deepcopy(
-        review_schema["$defs"]["FinalFields"]
-    )
-    reviews_property = review_schema["properties"]["reviews"]
-    reviews_schema = next(
-        deepcopy(item)
-        for item in reviews_property["anyOf"]
-        if item.get("type") == "array"
-    )
-    reviews_schema["items"] = record_schema
-
     input_properties = deepcopy(start_schema["properties"])
-    input_properties["confirm_all"] = deepcopy(
-        review_schema["properties"]["confirm_all"]
-    )
-    input_properties["reviews"] = reviews_schema
     return {
         "type": "object",
         "additionalProperties": False,
         "properties": {
             "operation": {
                 "type": "string",
-                "enum": ["start", "status", "review", "export"],
+                "enum": ["start", "status", "export"],
                 "description": (
                     "start requires input.image_paths and no job_id; status requires "
-                    "the returned job_id; review requires that job_id and exactly "
-                    "one of input.confirm_all=true or input.reviews; export requires "
-                    "that job_id after review."
+                    "the returned job_id; export requires that job_id after automatic "
+                    "approval and appears in next_operations."
                 ),
             },
             "job_id": {
                 "anyOf": [{"type": "string"}, {"type": "null"}],
                 "default": None,
                 "description": (
-                    "Omit for start. For status, review, and export, copy the exact "
+                    "Omit for start. For status and export, copy the exact "
                     "job_id returned by start."
                 ),
             },
@@ -280,9 +262,8 @@ def public_input_schema() -> dict[str, Any]:
                 "type": "object",
                 "additionalProperties": False,
                 "description": (
-                    "For start, send image_paths plus optional metadata. For review, "
-                    "send confirm_all=true for unchanged confirmation or reviews for "
-                    "corrections. Omit for status and export."
+                    "For start, send image_paths plus optional metadata. Omit for "
+                    "status and export; extracted records are approved automatically."
                 ),
                 "properties": input_properties,
             },

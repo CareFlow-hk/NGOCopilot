@@ -134,7 +134,12 @@ def _worker_snapshot(status: str = "pending_review") -> dict[str, Any]:
         "result": {
             "batch": {"id": 41, "status": status, "total_photos": 1},
             "records": [
-                {"id": 101, "batch_id": 41, "is_reviewed": status != "pending_review"}
+                {
+                    "id": 101,
+                    "batch_id": 41,
+                    "is_reviewed": status != "pending_review",
+                    "final_fields": _final_fields(),
+                }
             ],
             "reviewed_count": 0 if status == "pending_review" else 1,
             "unreviewed_count": 1 if status == "pending_review" else 0,
@@ -159,7 +164,13 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
 ) -> None:
     source = tmp_path / "source-form.jpg"
     _write_jpeg(source)
-    runtime = FakeRuntime(tmp_path / "runtime", {"start": _worker_snapshot()})
+    runtime = FakeRuntime(
+        tmp_path / "runtime",
+        {
+            "start": _worker_snapshot(),
+            "review": _worker_snapshot("confirmed"),
+        },
+    )
 
     execution = asyncio.run(
         CONTROLLER.execute(
@@ -176,7 +187,7 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
         )
     )
 
-    assert execution.state == "pending_review"
+    assert execution.state == "reviewed"
     assert runtime.staged[0]["role"] == "completed_form_image_001"
     assert runtime.staged[0]["content_kind"] == "image"
     worker_payload = runtime.worker_calls[0]["payload"]
@@ -191,6 +202,11 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
         == worker_payload["image_paths"][0]
     )
     assert execution.native_refs["batch_id"] == 41
+    assert [call["operation"] for call in runtime.worker_calls] == ["start", "review"]
+    automatic_review = runtime.worker_calls[1]["payload"]["reviews"][0]
+    assert automatic_review["record_id"] == 101
+    assert automatic_review["reviewer"] == "NGOPilot automatic approval"
+    assert tuple(automatic_review["final_fields"]) == FIELD_KEYS
 
 
 def test_start_derives_title_from_single_filename_when_metadata_is_omitted(
@@ -198,7 +214,13 @@ def test_start_derives_title_from_single_filename_when_metadata_is_omitted(
 ) -> None:
     source = tmp_path / "kowloon_team_7.jpg"
     _write_jpeg(source)
-    runtime = FakeRuntime(tmp_path / "runtime", {"start": _worker_snapshot()})
+    runtime = FakeRuntime(
+        tmp_path / "runtime",
+        {
+            "start": _worker_snapshot(),
+            "review": _worker_snapshot("confirmed"),
+        },
+    )
 
     asyncio.run(
         CONTROLLER.execute(
@@ -251,6 +273,28 @@ def test_review_routes_complete_fields_and_preserves_native_result(
     assert payload["native_batch_id"] == 41
     assert tuple(payload["reviews"][0]["final_fields"]) == FIELD_KEYS
     assert execution.result["records"][0]["source_path"] == "/staged/form.jpg"
+
+
+def test_status_auto_approves_an_older_pending_job(tmp_path: Path) -> None:
+    runtime = FakeRuntime(
+        tmp_path,
+        {
+            "status": _worker_snapshot(),
+            "review": _worker_snapshot("confirmed"),
+        },
+    )
+    runtime.job.native_refs = {"batch_id": 41, "record_ids": [101]}
+
+    execution = asyncio.run(
+        CONTROLLER.execute(
+            ToolCall(operation="status", job_id=runtime.job.job_id),
+            runtime,
+        )
+    )
+
+    assert execution.state == "reviewed"
+    assert execution.next_operations == ["status", "export"]
+    assert [call["operation"] for call in runtime.worker_calls] == ["status", "review"]
 
 
 def test_confirm_all_copies_complete_unreviewed_values_from_job(tmp_path: Path) -> None:
@@ -352,7 +396,7 @@ def test_partial_export_promotes_native_workbook_and_returns_owned_path(
     assert Path(execution.artifacts[0].path).exists()
 
 
-def test_minimal_start_confirm_all_export_lifecycle(tmp_path: Path) -> None:
+def test_minimal_start_export_lifecycle(tmp_path: Path) -> None:
     source = tmp_path / "volunteer_visit.jpg"
     _write_jpeg(source)
     final_fields = {**_final_fields(), "elder_name": "Chan Tai Man"}
@@ -394,16 +438,6 @@ def test_minimal_start_confirm_all_export_lifecycle(tmp_path: Path) -> None:
             runtime,
         )
     )
-    reviewed = asyncio.run(
-        CONTROLLER.execute(
-            ToolCall(
-                operation="review",
-                job_id=started.job_id,
-                input={"confirm_all": True},
-            ),
-            runtime,
-        )
-    )
     exported = asyncio.run(
         CONTROLLER.execute(
             ToolCall(operation="export", job_id=started.job_id),
@@ -411,8 +445,13 @@ def test_minimal_start_confirm_all_export_lifecycle(tmp_path: Path) -> None:
         )
     )
 
-    assert started.next_operations == ["status", "review"]
-    assert reviewed.next_operations == ["status", "review", "export"]
+    assert started.state == "reviewed"
+    assert started.next_operations == ["status", "export"]
+    assert [call["operation"] for call in runtime.worker_calls] == [
+        "start",
+        "review",
+        "export",
+    ]
     assert exported.state == "exported"
     assert exported.artifacts[0].kind == "volunteer_forms_excel"
     assert Path(exported.artifacts[0].path).is_file()
