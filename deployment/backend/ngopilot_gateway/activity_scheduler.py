@@ -9,6 +9,8 @@ from datetime import date, time
 from io import BytesIO
 from pathlib import Path
 
+from pypdf import PdfReader
+
 DATE_PATTERN = re.compile(r"(?<!\d)(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?!\d)|(?<!\d)(\d{4})年(\d{1,2})月(\d{1,2})日")
 TIME_RANGE_PATTERN = re.compile(
     r"(?<!\d)(\d{1,2}):([0-5]\d)\s*(?:-|–|—|至|to)\s*(\d{1,2}):([0-5]\d)(?!\d)",
@@ -36,18 +38,42 @@ class ExtractedActivity:
     sessions: list[ExtractedSession] = field(default_factory=list)
 
 
-def source_text(filename: str, content: bytes) -> str:
+def pdf_to_text(content: bytes, *, max_chars: int) -> str:
+    """Extract selectable text from a PDF while bounding downstream model input."""
+    try:
+        reader = PdfReader(BytesIO(content))
+        if reader.is_encrypted and reader.decrypt("") == 0:
+            raise ValueError("The PDF is password protected")
+        pages: list[str] = []
+        total_chars = 0
+        for page in reader.pages:
+            page_text = (page.extract_text() or "").strip()
+            total_chars += len(page_text)
+            if total_chars > max_chars:
+                raise ValueError("The PDF contains too much text to extract in one import")
+            if page_text:
+                pages.append(page_text)
+    except ValueError:
+        raise
+    except Exception as error:
+        raise ValueError("Unable to read text from this PDF") from error
+
+    text = "\n".join(pages)
+    if not text:
+        raise ValueError("This PDF has no selectable text. Upload page images instead.")
+    return text
+
+
+def source_text(filename: str, content: bytes, *, max_chars: int = 120_000) -> str:
     """Read common document inputs without treating extracted data as authoritative."""
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
-        try:
-            from pypdf import PdfReader
-        except ImportError as error:  # pragma: no cover - deployment dependency guard
-            raise ValueError("PDF extraction is not available on this server") from error
-        reader = PdfReader(BytesIO(content))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return pdf_to_text(content, max_chars=max_chars)
     if suffix in {".txt", ".csv", ".md", ".html", ".htm"} or not suffix:
-        return content.decode("utf-8", errors="replace")
+        text = content.decode("utf-8", errors="replace")
+        if len(text) > max_chars:
+            raise ValueError("The document contains too much text to extract in one import")
+        return text
     raise ValueError("Use a text, CSV, HTML, or text-based PDF activity notice")
 
 

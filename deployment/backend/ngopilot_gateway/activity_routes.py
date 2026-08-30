@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import date, time
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from .activity_scheduler import (
     ExtractedActivity,
+    ExtractedSession,
     check_conflicts,
     extract_activities,
     is_image_document,
@@ -73,6 +75,10 @@ class MemberInput(BaseModel):
 class ScheduleRequest(BaseModel):
     activity_id: UUID
     override_conflicts: bool = False
+
+
+class KimiActivityExtraction(BaseModel):
+    activities: list[ActivityInput] = Field(default_factory=list, max_length=200)
 
 
 def not_found(message: str) -> HTTPException:
@@ -146,6 +152,78 @@ async def extract_image_text(filename: str, content: bytes, app_settings: Settin
         ) from error
 
 
+def activities_from_kimi_json(content: str) -> list[ExtractedActivity]:
+    """Validate Kimi's response before allowing it into the import review."""
+    parsed = json.loads(content)
+    result = KimiActivityExtraction.model_validate(parsed)
+    return [
+        ExtractedActivity(
+            name=activity.name,
+            description=activity.description,
+            location=activity.location,
+            activity_code=activity.activity_code,
+            sessions=[
+                ExtractedSession(
+                    session_date=session.session_date,
+                    start_time=session.start_time,
+                    end_time=session.end_time,
+                    raw_date_text=session.raw_date_text,
+                )
+                for session in activity.sessions
+            ],
+        )
+        for activity in result.activities
+    ]
+
+
+async def extract_activities_with_kimi(
+    text: str, filename: str, app_settings: Settings
+) -> list[ExtractedActivity] | None:
+    """Ask the production Kimi model for reviewable, structured activity data."""
+    if not app_settings.openrouter_api_key:
+        return None
+
+    payload = {
+        "model": app_settings.goose_model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Extract community activity notices into JSON. Return only a JSON object with "
+                    "an activities array. Each activity has name, description, location, activity_code, "
+                    "and sessions. Each session has session_date (YYYY-MM-DD), start_time (HH:MM or null), "
+                    "end_time (HH:MM or null), and raw_date_text. Split every listed date into its own "
+                    "session. Preserve missing information as null. Never invent dates, times, locations, "
+                    "or activity names."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Source filename: {filename}\n\nNotice text:\n{text}",
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {app_settings.openrouter_api_key}"},
+                json=payload,
+            )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Kimi returned no structured activity data")
+        activities = activities_from_kimi_json(content)
+        return activities or None
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, ValidationError):
+        # The review flow remains usable during a model outage. Its deterministic
+        # parser produces incomplete fields rather than inventing them.
+        return None
+
+
 @router.post("/activity-import")
 async def extract_activity_import(
     file: UploadFile = File(...),
@@ -154,19 +232,31 @@ async def extract_activity_import(
 ) -> dict[str, object]:
     del auth
     filename = (file.filename or "activity-notice.txt").strip()[:255]
-    content = await file.read(app_settings.max_upload_bytes + 1)
-    if len(content) > app_settings.max_upload_bytes:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File is too large")
+    content = await file.read(app_settings.max_activity_import_bytes + 1)
+    if len(content) > app_settings.max_activity_import_bytes:
+        limit_mb = app_settings.max_activity_import_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Activity documents must be {limit_mb} MB or smaller",
+        )
     try:
         text = (
             await extract_image_text(filename, content, app_settings)
             if is_image_document(filename)
-            else source_text(filename, content)
+            else source_text(filename, content, max_chars=app_settings.max_activity_text_chars)
         )
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
-    activities = extract_activities(text, filename)
-    return {"source_filename": filename, "activities": [activity_as_dict(item) for item in activities]}
+    activities = await extract_activities_with_kimi(text, filename, app_settings)
+    extraction_method = "kimi"
+    if activities is None:
+        activities = extract_activities(text, filename)
+        extraction_method = "rules"
+    return {
+        "source_filename": filename,
+        "extraction_method": extraction_method,
+        "activities": [activity_as_dict(item) for item in activities],
+    }
 
 
 @router.post("/activity-import/confirm", status_code=status.HTTP_201_CREATED)

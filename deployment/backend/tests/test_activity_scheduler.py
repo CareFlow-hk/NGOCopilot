@@ -3,11 +3,17 @@ from __future__ import annotations
 from datetime import date, time
 from uuid import uuid4
 
-from ngopilot_gateway.activity_routes import ActivityInput
+from ngopilot_gateway import activity_routes
+from ngopilot_gateway.activity_routes import (
+    ActivityInput,
+    activities_from_kimi_json,
+    extract_activities_with_kimi,
+)
 from ngopilot_gateway.activity_scheduler import (
     check_conflicts,
     extract_activities,
     is_image_document,
+    pdf_to_text,
 )
 from ngopilot_gateway.db import Database
 
@@ -90,6 +96,83 @@ def test_back_to_back_sessions_do_not_conflict() -> None:
 def test_supported_image_notices_use_the_vision_extraction_path() -> None:
     assert is_image_document("programme.jpg") is True
     assert is_image_document("programme.pdf") is False
+
+
+def test_pdf_to_text_extracts_pages_and_bounds_model_input(monkeypatch) -> None:
+    class Page:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def extract_text(self) -> str:
+            return self.text
+
+    class Reader:
+        is_encrypted = False
+        pages = [Page("First notice"), Page("Second notice")]
+
+        def __init__(self, _source: object) -> None:
+            pass
+
+    monkeypatch.setattr("ngopilot_gateway.activity_scheduler.PdfReader", Reader)
+
+    assert pdf_to_text(b"%PDF", max_chars=100) == "First notice\nSecond notice"
+
+
+def test_kimi_activity_json_is_validated_for_review() -> None:
+    activities = activities_from_kimi_json(
+        '{"activities":[{"name":"Tai Chi Class","location":"Community Hall",'
+        '"sessions":[{"session_date":"2026-09-08","start_time":"10:00",'
+        '"end_time":"11:00"}]}]}'
+    )
+
+    assert activities[0].name == "Tai Chi Class"
+    assert activities[0].sessions[0].session_date == date(2026, 9, 8)
+    assert activities[0].sessions[0].start_time == time(10, 0)
+
+
+async def test_kimi_extraction_requests_json_from_the_configured_model(settings, monkeypatch) -> None:
+    request: dict[str, object] = {}
+
+    class Response:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"activities":[{"name":"Health Talk","sessions":['
+                                '{"session_date":"2026-09-10","start_time":"14:00",'
+                                '"end_time":"15:00"}]}]}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class Client:
+        async def __aenter__(self) -> "Client":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            pass
+
+        async def post(self, _url: str, **kwargs: object) -> Response:
+            request.update(kwargs)
+            return Response()
+
+    monkeypatch.setattr(activity_routes.httpx, "AsyncClient", lambda **_kwargs: Client())
+
+    activities = await extract_activities_with_kimi("2026-09-10 14:00-15:00", "notice.pdf", settings)
+
+    assert activities is not None
+    assert activities[0].name == "Health Talk"
+    payload = request["json"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == settings.goose_model
+    assert payload["response_format"] == {"type": "json_object"}
 
 
 def test_activity_confirmation_keeps_database_date_and_time_types() -> None:

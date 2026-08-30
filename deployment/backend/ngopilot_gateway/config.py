@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     registration_enabled: bool = True
 
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
+    # Activity notices are often multi-page PDFs. Keep their limit separate from
+    # general chat uploads so a large notice does not weaken other upload paths.
+    max_activity_import_bytes: int = Field(default=75 * 1024 * 1024, ge=1)
+    max_activity_text_chars: int = Field(default=120_000, ge=1_000, le=500_000)
     upload_resolve_timeout_seconds: float = Field(default=30, ge=0, le=300)
     gcs_bucket: str = ""
     gcp_project_id: str = ""
