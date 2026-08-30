@@ -34,6 +34,13 @@ type Activity = {
 type Member = { id: string; name: string };
 type ScheduleItem = { activity_id: string; name: string; location: string | null; sessions: Session[] };
 type Draft = { source_filename: string; activities: Omit<Activity, 'id'>[] };
+type ImportJob = {
+  job_id?: string;
+  status: 'processing' | 'ready' | 'failed';
+  source_filename?: string;
+  activities?: Omit<Activity, 'id'>[];
+  detail?: string;
+};
 type ConflictResult = {
   status?: string;
   has_conflict: boolean;
@@ -44,6 +51,7 @@ type ConflictResult = {
 const PRODUCTION_API_URL = 'https://ngopilot-api-production.up.railway.app';
 const API_BASE = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? PRODUCTION_API_URL : '')).replace(/\/+$/, '');
 const token = () => localStorage.getItem('ngopilot.auth.token');
+const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -134,8 +142,28 @@ export default function ActivityScheduler(): React.ReactElement {
     setIsImporting(true); setError(null); setNotice(null);
     try {
       const body = new FormData(); body.set('file', file);
-      const result = await api<Draft>('/api/activity-import', { method: 'POST', body });
-      setDraft(result);
+      const started = await api<ImportJob>('/api/activity-import/jobs', { method: 'POST', body });
+      if (!started.job_id) throw new Error('The extraction job did not start');
+      let transientFailures = 0;
+      for (let attempt = 0; attempt < 180; attempt += 1) {
+        await wait(1000);
+        let job: ImportJob;
+        try {
+          job = await api<ImportJob>(`/api/activity-import/jobs/${started.job_id}`);
+          transientFailures = 0;
+        } catch (cause) {
+          transientFailures += 1;
+          if (transientFailures < 5) continue;
+          throw cause;
+        }
+        if (job.status === 'failed') throw new Error(job.detail || 'Unable to extract this file');
+        if (job.status === 'ready') {
+          if (!job.source_filename || !job.activities) throw new Error('The extraction result is incomplete');
+          setDraft({ source_filename: job.source_filename, activities: job.activities });
+          return;
+        }
+      }
+      throw new Error('Activity extraction timed out. Please try again.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to extract this file'); }
     finally { setIsImporting(false); if (inputRef.current) inputRef.current.value = ''; }
   };

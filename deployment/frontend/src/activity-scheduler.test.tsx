@@ -21,10 +21,12 @@ describe("ActivityScheduler import review", () => {
     await act(async () => root.unmount());
     container.remove();
     localStorage.clear();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it("opens the Review dialog after a PDF extraction response", async () => {
+    vi.useFakeTimers();
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/api/activities")) {
@@ -33,9 +35,13 @@ describe("ActivityScheduler import review", () => {
       if (url.endsWith("/api/members")) {
         return Response.json({ members: [] });
       }
-      if (url.endsWith("/api/activity-import") && init?.method === "POST") {
+      if (url.endsWith("/api/activity-import/jobs") && init?.method === "POST") {
         expect(init.body).toBeInstanceOf(FormData);
+        return Response.json({ job_id: "job-1", status: "processing" }, { status: 202 });
+      }
+      if (url.endsWith("/api/activity-import/jobs/job-1")) {
         return Response.json({
+          status: "ready",
           source_filename: "large-programme.pdf",
           extraction_method: "kimi",
           activities: [
@@ -74,7 +80,8 @@ describe("ActivityScheduler import review", () => {
 
     await act(async () => {
       input?.dispatchEvent(new Event("change", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1000);
     });
 
     const review = container.querySelector<HTMLElement>(

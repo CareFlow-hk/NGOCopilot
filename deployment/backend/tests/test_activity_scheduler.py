@@ -5,11 +5,14 @@ from uuid import uuid4
 
 from ngopilot_gateway import activity_routes
 from ngopilot_gateway.activity_routes import (
+    ActivityImportJob,
     ActivityInput,
     activities_from_kimi_json,
+    activity_import_jobs,
     extract_activities_from_text_parts,
     extract_activities_with_kimi,
     merge_extracted_activities,
+    run_activity_import_job,
 )
 from ngopilot_gateway.activity_scheduler import (
     ExtractedActivity,
@@ -243,6 +246,30 @@ def test_merge_extracted_activities_deduplicates_repeated_sessions() -> None:
 
     assert len(activities) == 1
     assert len(activities[0].sessions) == 1
+
+
+async def test_background_import_job_reaches_review_ready(settings, monkeypatch) -> None:
+    job_id = uuid4()
+    user_id = uuid4()
+    activity_import_jobs[job_id] = ActivityImportJob(user_id=user_id)
+
+    async def extract_document(
+        _content: bytes, filename: str, _settings: object
+    ) -> dict[str, object]:
+        return {
+            "source_filename": filename,
+            "extraction_method": "kimi",
+            "activities": [{"name": "Tai Chi Class", "sessions": []}],
+        }
+
+    monkeypatch.setattr(activity_routes, "extract_activity_document", extract_document)
+
+    await run_activity_import_job(job_id, b"%PDF", "programme.pdf", settings)
+
+    job = activity_import_jobs.pop(job_id)
+    assert job.status == "ready"
+    assert job.result is not None
+    assert job.result["source_filename"] == "programme.pdf"
 
 
 def test_activity_confirmation_keeps_database_date_and_time_types() -> None:

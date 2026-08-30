@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from dataclasses import dataclass
 from datetime import date, time
-from uuid import UUID
+from time import monotonic
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -80,6 +82,20 @@ class ScheduleRequest(BaseModel):
 
 class KimiActivityExtraction(BaseModel):
     activities: list[ActivityInput] = Field(default_factory=list, max_length=200)
+
+
+@dataclass(slots=True)
+class ActivityImportJob:
+    user_id: UUID
+    status: str = "processing"
+    result: dict[str, object] | None = None
+    error: str | None = None
+    created_at: float = 0
+
+
+activity_import_jobs: dict[UUID, ActivityImportJob] = {}
+activity_import_tasks: set[asyncio.Task[None]] = set()
+MAX_ACTIVITY_IMPORT_JOBS = 200
 
 
 def not_found(message: str) -> HTTPException:
@@ -278,21 +294,10 @@ async def extract_activities_from_text_parts(
     return merge_extracted_activities(activity_sets), "+".join(sorted(set(extraction_methods)))
 
 
-@router.post("/activity-import")
-async def extract_activity_import(
-    file: UploadFile = File(...),
-    auth: AuthContext = Depends(require_auth),
-    app_settings: Settings = Depends(settings),
+async def extract_activity_document(
+    content: bytes, filename: str, app_settings: Settings
 ) -> dict[str, object]:
-    del auth
-    filename = (file.filename or "activity-notice.txt").strip()[:255]
-    content = await file.read(app_settings.max_activity_import_bytes + 1)
-    if len(content) > app_settings.max_activity_import_bytes:
-        limit_mb = app_settings.max_activity_import_bytes // (1024 * 1024)
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Activity documents must be {limit_mb} MB or smaller",
-        )
+    """Produce the editable Review payload without persisting any activity."""
     try:
         text_parts = (
             [await extract_image_text(filename, content, app_settings)]
@@ -300,7 +305,9 @@ async def extract_activity_import(
             else source_text_parts(filename, content, max_chars=app_settings.max_activity_text_chars)
         )
     except ValueError as error:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
     activities, extraction_method = await extract_activities_from_text_parts(
         text_parts, filename, app_settings
     )
@@ -309,6 +316,102 @@ async def extract_activity_import(
         "extraction_method": extraction_method,
         "activities": [activity_as_dict(item) for item in activities],
     }
+
+
+def trim_activity_import_jobs() -> None:
+    if len(activity_import_jobs) < MAX_ACTIVITY_IMPORT_JOBS:
+        return
+    finished = sorted(
+        (
+            (job_id, job)
+            for job_id, job in activity_import_jobs.items()
+            if job.status != "processing"
+        ),
+        key=lambda item: item[1].created_at,
+    )
+    for job_id, _job in finished[: max(1, len(activity_import_jobs) // 4)]:
+        activity_import_jobs.pop(job_id, None)
+
+
+async def run_activity_import_job(
+    job_id: UUID, content: bytes, filename: str, app_settings: Settings
+) -> None:
+    job = activity_import_jobs[job_id]
+    try:
+        job.result = await extract_activity_document(content, filename, app_settings)
+        job.status = "ready"
+    except HTTPException as error:
+        job.error = str(error.detail)
+        job.status = "failed"
+    except Exception:
+        job.error = "Unable to extract activities from this document"
+        job.status = "failed"
+
+
+def start_activity_import_job(
+    user_id: UUID, content: bytes, filename: str, app_settings: Settings
+) -> UUID:
+    trim_activity_import_jobs()
+    job_id = uuid4()
+    activity_import_jobs[job_id] = ActivityImportJob(
+        user_id=user_id,
+        created_at=monotonic(),
+    )
+    task = asyncio.create_task(run_activity_import_job(job_id, content, filename, app_settings))
+    activity_import_tasks.add(task)
+    task.add_done_callback(activity_import_tasks.discard)
+    return job_id
+
+
+async def read_activity_upload(
+    file: UploadFile, app_settings: Settings
+) -> tuple[str, bytes]:
+    filename = (file.filename or "activity-notice.txt").strip()[:255]
+    content = await file.read(app_settings.max_activity_import_bytes + 1)
+    if len(content) > app_settings.max_activity_import_bytes:
+        limit_mb = app_settings.max_activity_import_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Activity documents must be {limit_mb} MB or smaller",
+        )
+    return filename, content
+
+
+@router.post("/activity-import")
+async def extract_activity_import(
+    file: UploadFile = File(...),
+    auth: AuthContext = Depends(require_auth),
+    app_settings: Settings = Depends(settings),
+) -> dict[str, object]:
+    del auth
+    filename, content = await read_activity_upload(file, app_settings)
+    return await extract_activity_document(content, filename, app_settings)
+
+
+@router.post("/activity-import/jobs", status_code=status.HTTP_202_ACCEPTED)
+async def create_activity_import_job(
+    file: UploadFile = File(...),
+    auth: AuthContext = Depends(require_auth),
+    app_settings: Settings = Depends(settings),
+) -> dict[str, str]:
+    filename, content = await read_activity_upload(file, app_settings)
+    job_id = start_activity_import_job(auth.user_id, content, filename, app_settings)
+    return {"job_id": str(job_id), "status": "processing"}
+
+
+@router.get("/activity-import/jobs/{job_id}")
+async def get_activity_import_job(
+    job_id: UUID,
+    auth: AuthContext = Depends(require_auth),
+) -> dict[str, object]:
+    job = activity_import_jobs.get(job_id)
+    if job is None or job.user_id != auth.user_id:
+        raise not_found("Activity import job not found")
+    if job.status == "ready" and job.result is not None:
+        return {"status": "ready", **job.result}
+    if job.status == "failed":
+        return {"status": "failed", "detail": job.error or "Activity extraction failed"}
+    return {"status": "processing"}
 
 
 @router.post("/activity-import/confirm", status_code=status.HTTP_201_CREATED)
