@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, time
 from time import monotonic
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from .activity_scheduler import (
@@ -84,6 +84,19 @@ class KimiActivityExtraction(BaseModel):
     activities: list[ActivityInput] = Field(default_factory=list, max_length=200)
 
 
+class ActivityChunkedUploadInput(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    size: int = Field(ge=1)
+
+    @field_validator("filename")
+    @classmethod
+    def trim_filename(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("filename is required")
+        return cleaned
+
+
 @dataclass(slots=True)
 class ActivityImportJob:
     user_id: UUID
@@ -93,9 +106,23 @@ class ActivityImportJob:
     created_at: float = 0
 
 
+@dataclass(slots=True)
+class ActivityImportUpload:
+    user_id: UUID
+    filename: str
+    expected_size: int
+    content: bytearray = field(default_factory=bytearray)
+    job_id: UUID | None = None
+    created_at: float = 0
+
+
 activity_import_jobs: dict[UUID, ActivityImportJob] = {}
 activity_import_tasks: set[asyncio.Task[None]] = set()
+activity_import_uploads: dict[UUID, ActivityImportUpload] = {}
 MAX_ACTIVITY_IMPORT_JOBS = 200
+MAX_ACTIVITY_IMPORT_UPLOADS = 20
+MAX_ACTIVITY_IMPORT_CHUNK_BYTES = 5 * 1024 * 1024
+ACTIVITY_IMPORT_UPLOAD_TTL_SECONDS = 30 * 60
 
 
 def not_found(message: str) -> HTTPException:
@@ -370,6 +397,100 @@ def start_activity_import_job(
     return job_id
 
 
+def trim_activity_import_uploads() -> None:
+    cutoff = monotonic() - ACTIVITY_IMPORT_UPLOAD_TTL_SECONDS
+    for upload_id, upload in list(activity_import_uploads.items()):
+        if upload.created_at < cutoff:
+            activity_import_uploads.pop(upload_id, None)
+
+
+def start_activity_chunked_upload(
+    user_id: UUID, payload: ActivityChunkedUploadInput, app_settings: Settings
+) -> UUID:
+    if payload.size > app_settings.max_activity_import_bytes:
+        limit_mb = app_settings.max_activity_import_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Activity documents must be {limit_mb} MB or smaller",
+        )
+    trim_activity_import_uploads()
+    if len(activity_import_uploads) >= MAX_ACTIVITY_IMPORT_UPLOADS:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Too many activity uploads are in progress. Please try again shortly.",
+        )
+    upload_id = uuid4()
+    activity_import_uploads[upload_id] = ActivityImportUpload(
+        user_id=user_id,
+        filename=payload.filename,
+        expected_size=payload.size,
+        created_at=monotonic(),
+    )
+    return upload_id
+
+
+def append_activity_import_chunk(
+    upload: ActivityImportUpload, offset: int, chunk: bytes
+) -> int:
+    if not chunk:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload chunk is empty")
+    if len(chunk) > MAX_ACTIVITY_IMPORT_CHUNK_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Activity upload chunks must be 5 MB or smaller",
+        )
+    received = len(upload.content)
+    if offset < received:
+        if bytes(upload.content[offset : offset + len(chunk)]) == chunk:
+            return received
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This upload chunk conflicts with data already received",
+        )
+    if offset != received:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Upload must resume at byte {received}",
+        )
+    if received + len(chunk) > upload.expected_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Upload exceeds the declared document size",
+        )
+    upload.content.extend(chunk)
+    return len(upload.content)
+
+
+async def read_activity_import_chunk(request: Request) -> bytes:
+    content = bytearray()
+    async for part in request.stream():
+        content.extend(part)
+        if len(content) > MAX_ACTIVITY_IMPORT_CHUNK_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Activity upload chunks must be 5 MB or smaller",
+            )
+    return bytes(content)
+
+
+def finish_activity_chunked_upload(
+    upload: ActivityImportUpload, app_settings: Settings
+) -> UUID:
+    if upload.job_id is not None:
+        return upload.job_id
+    if len(upload.content) != upload.expected_size:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Upload is incomplete: received {len(upload.content)} of {upload.expected_size} bytes",
+        )
+    content = bytes(upload.content)
+    upload.job_id = start_activity_import_job(
+        upload.user_id, content, upload.filename, app_settings
+    )
+    upload.content.clear()
+    return upload.job_id
+
+
 async def read_activity_upload(
     file: UploadFile, app_settings: Settings
 ) -> tuple[str, bytes]:
@@ -403,6 +524,49 @@ async def create_activity_import_job(
 ) -> dict[str, str]:
     filename, content = await read_activity_upload(file, app_settings)
     job_id = start_activity_import_job(auth.user_id, content, filename, app_settings)
+    return {"job_id": str(job_id), "status": "processing"}
+
+
+@router.post("/activity-import/uploads", status_code=status.HTTP_201_CREATED)
+async def create_activity_chunked_upload(
+    payload: ActivityChunkedUploadInput,
+    auth: AuthContext = Depends(require_auth),
+    app_settings: Settings = Depends(settings),
+) -> dict[str, object]:
+    upload_id = start_activity_chunked_upload(auth.user_id, payload, app_settings)
+    return {"upload_id": str(upload_id), "status": "uploading", "received": 0}
+
+
+@router.post("/activity-import/uploads/{upload_id}/chunks")
+async def upload_activity_import_chunk(
+    upload_id: UUID,
+    request: Request,
+    offset: int = Query(ge=0),
+    auth: AuthContext = Depends(require_auth),
+) -> dict[str, object]:
+    upload = activity_import_uploads.get(upload_id)
+    if upload is None or upload.user_id != auth.user_id:
+        raise not_found("Activity upload not found")
+    if upload.job_id is not None:
+        return {"status": "complete", "received": upload.expected_size}
+    chunk = await read_activity_import_chunk(request)
+    received = append_activity_import_chunk(upload, offset, chunk)
+    return {
+        "status": "uploaded" if received == upload.expected_size else "uploading",
+        "received": received,
+    }
+
+
+@router.post("/activity-import/uploads/{upload_id}/complete", status_code=status.HTTP_202_ACCEPTED)
+async def complete_activity_chunked_upload(
+    upload_id: UUID,
+    auth: AuthContext = Depends(require_auth),
+    app_settings: Settings = Depends(settings),
+) -> dict[str, str]:
+    upload = activity_import_uploads.get(upload_id)
+    if upload is None or upload.user_id != auth.user_id:
+        raise not_found("Activity upload not found")
+    job_id = finish_activity_chunked_upload(upload, app_settings)
     return {"job_id": str(job_id), "status": "processing"}
 
 

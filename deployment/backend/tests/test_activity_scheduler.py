@@ -7,15 +7,20 @@ from uuid import uuid4
 
 from ngopilot_gateway import activity_routes
 from ngopilot_gateway.activity_routes import (
+    ActivityChunkedUploadInput,
     ActivityImportJob,
     ActivityInput,
     activities_from_kimi_json,
     activity_import_jobs,
+    activity_import_uploads,
+    append_activity_import_chunk,
     extract_activities_from_text_parts,
     extract_activities_with_kimi,
     extract_activity_document,
+    finish_activity_chunked_upload,
     merge_extracted_activities,
     run_activity_import_job,
+    start_activity_chunked_upload,
 )
 from ngopilot_gateway.activity_scheduler import (
     ExtractedActivity,
@@ -322,6 +327,49 @@ async def test_pdf_parsing_runs_outside_event_loop(settings, monkeypatch) -> Non
 
     assert parser_thread_id is not None
     assert parser_thread_id != event_loop_thread_id
+
+
+def test_large_activity_upload_reassembles_retryable_chunks(settings, monkeypatch) -> None:
+    user_id = uuid4()
+    content = b"first-half-second-half"
+    upload_id = start_activity_chunked_upload(
+        user_id,
+        ActivityChunkedUploadInput(filename="large-programme.pdf", size=len(content)),
+        settings,
+    )
+    upload = activity_import_uploads[upload_id]
+
+    assert append_activity_import_chunk(upload, 0, content[:11]) == 11
+    assert append_activity_import_chunk(upload, 0, content[:11]) == 11
+    assert append_activity_import_chunk(upload, 11, content[11:]) == len(content)
+
+    job_id = uuid4()
+    started: dict[str, object] = {}
+
+    def start_job(
+        captured_user_id: object,
+        captured_content: bytes,
+        captured_filename: str,
+        _settings: object,
+    ) -> object:
+        started.update(
+            user_id=captured_user_id,
+            content=captured_content,
+            filename=captured_filename,
+        )
+        return job_id
+
+    monkeypatch.setattr(activity_routes, "start_activity_import_job", start_job)
+
+    assert finish_activity_chunked_upload(upload, settings) == job_id
+    assert finish_activity_chunked_upload(upload, settings) == job_id
+    assert started == {
+        "user_id": user_id,
+        "content": content,
+        "filename": "large-programme.pdf",
+    }
+    assert upload.content == bytearray()
+    activity_import_uploads.pop(upload_id)
 
 
 def test_activity_confirmation_keeps_database_date_and_time_types() -> None:

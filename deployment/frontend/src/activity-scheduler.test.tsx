@@ -93,4 +93,77 @@ describe("ActivityScheduler import review", () => {
     expect(review?.querySelector<HTMLInputElement>('input[value="Tai Chi Class"]')).not.toBeNull();
     expect(review?.querySelector<HTMLInputElement>('input[value="2033-06-10"]')).not.toBeNull();
   });
+
+  it("uploads a large PDF in chunks before opening Review", async () => {
+    vi.useFakeTimers();
+    const totalSize = 8 * 1024 * 1024 + 1;
+    const chunkOffsets: number[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/activities")) return Response.json({ activities: [] });
+      if (url.endsWith("/api/members")) return Response.json({ members: [] });
+      if (url.endsWith("/api/activity-import/uploads")) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          filename: "large-programme.pdf",
+          size: totalSize,
+        });
+        return Response.json(
+          { upload_id: "upload-1", status: "uploading", received: 0 },
+          { status: 201 },
+        );
+      }
+      if (url.includes("/api/activity-import/uploads/upload-1/chunks?offset=")) {
+        const offset = Number(new URL(url, "http://localhost").searchParams.get("offset"));
+        const chunk = init?.body as Blob;
+        chunkOffsets.push(offset);
+        return Response.json({
+          status: offset + chunk.size === totalSize ? "uploaded" : "uploading",
+          received: offset + chunk.size,
+        });
+      }
+      if (url.endsWith("/api/activity-import/uploads/upload-1/complete")) {
+        return Response.json({ job_id: "job-large", status: "processing" }, { status: 202 });
+      }
+      if (url.endsWith("/api/activity-import/jobs/job-large")) {
+        return Response.json({
+          status: "ready",
+          source_filename: "large-programme.pdf",
+          activities: [{
+            name: "Tai Chi Class",
+            description: null,
+            location: null,
+            activity_code: null,
+            sessions: [{
+              session_date: "2033-06-10",
+              start_time: "10:00:00",
+              end_time: "11:00:00",
+            }],
+          }],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => {
+      root.render(<ActivityScheduler />);
+      await Promise.resolve();
+    });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const pdf = new File([new Uint8Array(totalSize)], "large-programme.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(input, "files", { configurable: true, value: [pdf] });
+
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(chunkOffsets).toEqual([0, 4 * 1024 * 1024, 8 * 1024 * 1024]);
+    expect(
+      container.querySelector('[role="dialog"][aria-label="Review imported activities"]'),
+    ).not.toBeNull();
+  });
 });

@@ -41,6 +41,11 @@ type ImportJob = {
   activities?: Omit<Activity, 'id'>[];
   detail?: string;
 };
+type ImportUpload = {
+  upload_id: string;
+  status: 'uploading' | 'uploaded' | 'complete';
+  received: number;
+};
 type ConflictResult = {
   status?: string;
   has_conflict: boolean;
@@ -52,6 +57,8 @@ const PRODUCTION_API_URL = 'https://ngopilot-api-production.up.railway.app';
 const API_BASE = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? PRODUCTION_API_URL : '')).replace(/\/+$/, '');
 const token = () => localStorage.getItem('ngopilot.auth.token');
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const CHUNK_UPLOAD_THRESHOLD = 8 * 1024 * 1024;
+const CHUNK_SIZE = 4 * 1024 * 1024;
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -87,6 +94,7 @@ export default function ActivityScheduler(): React.ReactElement {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [newMemberName, setNewMemberName] = useState('');
   const [conflict, setConflict] = useState<ConflictResult | null>(null);
@@ -138,11 +146,51 @@ export default function ActivityScheduler(): React.ReactElement {
     });
   }, [month]);
 
+  const startImport = async (file: File): Promise<ImportJob> => {
+    if (file.size <= CHUNK_UPLOAD_THRESHOLD) {
+      const body = new FormData(); body.set('file', file);
+      return api<ImportJob>('/api/activity-import/jobs', { method: 'POST', body });
+    }
+
+    const started = await api<ImportUpload>('/api/activity-import/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, size: file.size }),
+    });
+    let offset = 0;
+    while (offset < file.size) {
+      const chunk = file.slice(offset, Math.min(offset + CHUNK_SIZE, file.size));
+      let uploaded: ImportUpload | null = null;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 3 && !uploaded; attempt += 1) {
+        try {
+          uploaded = await api<ImportUpload>(
+            `/api/activity-import/uploads/${started.upload_id}/chunks?offset=${offset}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: chunk },
+          );
+        } catch (cause) {
+          lastError = cause;
+          if (attempt < 2) await wait(500 * (attempt + 1));
+        }
+      }
+      if (!uploaded) {
+        throw lastError instanceof Error ? lastError : new Error('The upload connection was interrupted');
+      }
+      if (uploaded.received <= offset) throw new Error('The upload did not advance');
+      offset = uploaded.received;
+      setUploadProgress(Math.round((offset / file.size) * 100));
+    }
+    return api<ImportJob>(`/api/activity-import/uploads/${started.upload_id}/complete`, {
+      method: 'POST',
+    });
+  };
+
   const upload = async (file: File) => {
     setIsImporting(true); setError(null); setNotice(null);
     try {
-      const body = new FormData(); body.set('file', file);
-      const started = await api<ImportJob>('/api/activity-import/jobs', { method: 'POST', body });
+      setUploadProgress(file.size > CHUNK_UPLOAD_THRESHOLD ? 0 : null);
+      const started = await startImport(file);
+      setUploadProgress(null);
       if (!started.job_id) throw new Error('The extraction job did not start');
       let transientFailures = 0;
       for (let attempt = 0; attempt < 180; attempt += 1) {
@@ -164,8 +212,10 @@ export default function ActivityScheduler(): React.ReactElement {
         }
       }
       throw new Error('Activity extraction timed out. Please try again.');
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to extract this file'); }
-    finally { setIsImporting(false); if (inputRef.current) inputRef.current.value = ''; }
+    } catch (cause) {
+      setError(cause instanceof TypeError ? 'The upload connection was interrupted. Please try again.' : cause instanceof Error ? cause.message : 'Unable to extract this file');
+    }
+    finally { setIsImporting(false); setUploadProgress(null); if (inputRef.current) inputRef.current.value = ''; }
   };
   const updateDraft = (activityIndex: number, sessionIndex: number | null, field: string, value: string) => {
     setDraft((current) => {
@@ -214,7 +264,7 @@ export default function ActivityScheduler(): React.ReactElement {
     <input ref={inputRef} type="file" accept=".txt,.csv,.md,.html,.htm,.pdf,.png,.jpg,.jpeg,.webp,text/plain,text/csv,application/pdf,image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
     <header className="activity-header">
       <div><p className="activity-kicker">Scheduler / Activities</p><h1>Community activities</h1><p>Review activity notices, then plan with the member in view.</p></div>
-      <button className="activity-primary" onClick={() => inputRef.current?.click()} disabled={isImporting}>{isImporting ? <LoaderCircle className="spin" /> : <FileUp />} {isImporting ? 'Extracting' : 'Import activities'}</button>
+      <button className="activity-primary" onClick={() => inputRef.current?.click()} disabled={isImporting}>{isImporting ? <LoaderCircle className="spin" /> : <FileUp />} {uploadProgress === null ? (isImporting ? 'Extracting' : 'Import activities') : `Uploading ${uploadProgress}%`}</button>
     </header>
     {error && <div className="activity-alert danger"><AlertTriangle />{error}<button onClick={() => setError(null)} aria-label="Dismiss error"><X /></button></div>}
     {notice && <div className="activity-alert success">{notice}<button onClick={() => setNotice(null)} aria-label="Dismiss notice"><X /></button></div>}
