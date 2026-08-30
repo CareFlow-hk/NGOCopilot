@@ -26,6 +26,7 @@ import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { ViewOptions } from '../../utils/navigationUtils';
 import { trackScheduleCreated, trackScheduleDeleted, getErrorType } from '../../utils/analytics';
 import { defineMessages, useIntl } from '../../i18n';
+import ActivityScheduler from './ActivityScheduler';
 
 const i18n = defineMessages({
   running: { id: 'schedulesView.running', defaultMessage: 'Running' },
@@ -235,6 +236,7 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
   const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null);
   const [actionsInProgress, setActionsInProgress] = useState<Set<string>>(new Set());
   const [viewingScheduleId, setViewingScheduleId] = useState<string | null>(null);
+  const [schedulerSection, setSchedulerSection] = useState<'activities' | 'automation'>('activities');
 
   const fetchSchedules = async () => {
     setIsLoading(true);
@@ -476,14 +478,32 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
     );
   }
 
+  if (schedulerSection === 'activities') {
+    return (
+      <MainPanelLayout removeTopPadding>
+        <div className="bg-background-primary border-b border-border px-8 pt-12">
+          <div className="flex gap-6" role="tablist" aria-label="Scheduler sections">
+            <button className="border-b-2 border-text-primary pb-3 text-sm font-medium" role="tab" aria-selected="true">Activities</button>
+            <button className="border-b-2 border-transparent pb-3 text-sm text-text-secondary hover:text-text-primary" role="tab" aria-selected="false" onClick={() => setSchedulerSection('automation')}>Automation</button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto"><ActivityScheduler /></div>
+      </MainPanelLayout>
+    );
+  }
+
   return (
     <>
       <MainPanelLayout>
         <div className="flex-1 flex flex-col min-h-0">
           <div className="bg-background-primary px-8 pb-8 pt-16">
             <div className="flex flex-col page-transition">
+              <div className="mb-7 flex gap-6" role="tablist" aria-label="Scheduler sections">
+                <button className="border-b-2 border-transparent pb-3 text-sm text-text-secondary hover:text-text-primary" role="tab" aria-selected="false" onClick={() => setSchedulerSection('activities')}>Activities</button>
+                <button className="border-b-2 border-text-primary pb-3 text-sm font-medium" role="tab" aria-selected="true">Automation</button>
+              </div>
               <div className="flex justify-between items-center mb-1">
-                <h1 className="text-4xl font-light">{intl.formatMessage(i18n.scheduler)}</h1>
+                <div><h1 className="text-4xl font-light">Automation</h1><p className="text-sm text-text-secondary mb-1">{intl.formatMessage(i18n.description)}</p></div>
                 <div className="flex gap-2">
                   <Button
                     onClick={handleRefresh}
@@ -508,9 +528,6 @@ const SchedulesView: React.FC<SchedulesViewProps> = ({ onClose: _onClose }) => {
                   </Button>
                 </div>
               </div>
-              <p className="text-sm text-text-secondary mb-1">
-                {intl.formatMessage(i18n.description)}
-              </p>
             </div>
           </div>
 

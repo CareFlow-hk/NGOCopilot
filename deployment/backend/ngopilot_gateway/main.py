@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from .acp_proxy import proxy_websocket
+from .activity_routes import router as activity_router
 from .auth import AuthContext, database, require_auth
 from .auth import router as auth_router
 from .config import Settings, get_settings
@@ -131,10 +132,11 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
     app.include_router(auth_router)
+    app.include_router(activity_router)
 
     @app.middleware("http")
     async def response_headers(request: Request, call_next):

@@ -18,7 +18,7 @@ DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 async def test_migration_auth_ticket_and_chat_projection() -> None:
     assert DATABASE_URL is not None
     migrations = Path(__file__).resolve().parents[1] / "ngopilot_gateway" / "migrations"
-    assert await apply_migrations(DATABASE_URL, migrations) == [1, 2]
+    assert await apply_migrations(DATABASE_URL, migrations) == [1, 2, 3]
     assert await apply_migrations(DATABASE_URL, migrations) == []
 
     settings = Settings(

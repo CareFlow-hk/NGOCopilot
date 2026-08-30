@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -674,6 +674,269 @@ class Database:
             user_id,
             local_path,
         )
+
+    @staticmethod
+    def _activities_from_rows(rows: list[asyncpg.Record]) -> list[dict[str, Any]]:
+        activities: dict[UUID, dict[str, Any]] = {}
+        for row in rows:
+            activity_id = UUID(str(row["activity_id"]))
+            activity = activities.setdefault(
+                activity_id,
+                {
+                    "id": str(activity_id),
+                    "name": row["name"],
+                    "description": row["description"],
+                    "location": row["location"],
+                    "activity_code": row["activity_code"],
+                    "source_filename": row["source_filename"],
+                    "created_at": row["created_at"].isoformat(),
+                    "sessions": [],
+                },
+            )
+            if row["session_id"] is not None:
+                activity["sessions"].append(
+                    {
+                        "id": str(row["session_id"]),
+                        "session_date": row["session_date"].isoformat(),
+                        "start_time": row["start_time"].isoformat() if row["start_time"] else None,
+                        "end_time": row["end_time"].isoformat() if row["end_time"] else None,
+                        "raw_date_text": row["raw_date_text"],
+                    }
+                )
+        return list(activities.values())
+
+    async def list_activities(
+        self, user_id: UUID, *, search: str | None = None, on_date: date | None = None
+    ) -> list[dict[str, Any]]:
+        rows = await self._pool().fetch(
+            """
+            SELECT a.id AS activity_id, a.name, a.description, a.location,
+                   a.activity_code, a.source_filename, a.created_at,
+                   s.id AS session_id, s.session_date, s.start_time, s.end_time, s.raw_date_text
+            FROM activities AS a
+            LEFT JOIN activity_sessions AS s ON s.activity_id = a.id
+            WHERE a.user_id = $1
+              AND ($2::text IS NULL OR a.name ILIKE '%' || $2 || '%')
+              AND ($3::date IS NULL OR EXISTS (
+                    SELECT 1 FROM activity_sessions AS matching
+                    WHERE matching.activity_id = a.id AND matching.session_date = $3::date
+              ))
+            ORDER BY a.created_at DESC, a.id, s.session_date, s.start_time NULLS LAST, s.id
+            """,
+            user_id,
+            search.strip() if search else None,
+            on_date,
+        )
+        return self._activities_from_rows(rows)
+
+    async def activity(self, user_id: UUID, activity_id: UUID) -> dict[str, Any] | None:
+        rows = await self._pool().fetch(
+            """
+            SELECT a.id AS activity_id, a.name, a.description, a.location,
+                   a.activity_code, a.source_filename, a.created_at,
+                   s.id AS session_id, s.session_date, s.start_time, s.end_time, s.raw_date_text
+            FROM activities AS a
+            LEFT JOIN activity_sessions AS s ON s.activity_id = a.id
+            WHERE a.user_id = $1 AND a.id = $2
+            ORDER BY s.session_date, s.start_time NULLS LAST, s.id
+            """,
+            user_id,
+            activity_id,
+        )
+        values = self._activities_from_rows(rows)
+        return values[0] if values else None
+
+    async def create_activities(
+        self, user_id: UUID, activities: list[dict[str, Any]], source_filename: str | None
+    ) -> list[dict[str, Any]]:
+        created_ids: list[UUID] = []
+        async with self._pool().acquire() as connection:
+            async with connection.transaction():
+                for activity in activities:
+                    row = await connection.fetchrow(
+                        """
+                        INSERT INTO activities (
+                            user_id, name, description, location, activity_code, source_filename
+                        ) VALUES ($1, $2, $3, $4, $5, $6)
+                        RETURNING id
+                        """,
+                        user_id,
+                        activity["name"],
+                        activity.get("description"),
+                        activity.get("location"),
+                        activity.get("activity_code"),
+                        source_filename,
+                    )
+                    activity_id = UUID(str(row["id"]))
+                    created_ids.append(activity_id)
+                    for session in activity.get("sessions", []):
+                        await connection.execute(
+                            """
+                            INSERT INTO activity_sessions (
+                                activity_id, session_date, start_time, end_time, raw_date_text
+                            ) VALUES ($1, $2::date, $3::time, $4::time, $5)
+                            """,
+                            activity_id,
+                            session["session_date"],
+                            session.get("start_time"),
+                            session.get("end_time"),
+                            session.get("raw_date_text"),
+                        )
+        created: list[dict[str, Any]] = []
+        for activity_id in created_ids:
+            value = await self.activity(user_id, activity_id)
+            if value is not None:
+                created.append(value)
+        return created
+
+    async def list_members(self, user_id: UUID) -> list[dict[str, str]]:
+        rows = await self._pool().fetch(
+            "SELECT id, name FROM members WHERE user_id = $1 ORDER BY name, id", user_id
+        )
+        return [{"id": str(row["id"]), "name": row["name"]} for row in rows]
+
+    async def create_member(self, user_id: UUID, name: str) -> dict[str, str]:
+        row = await self._pool().fetchrow(
+            """
+            INSERT INTO members (user_id, name) VALUES ($1, $2)
+            ON CONFLICT (user_id, name) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id, name
+            """,
+            user_id,
+            name,
+        )
+        return {"id": str(row["id"]), "name": row["name"]}
+
+    async def member_exists(self, user_id: UUID, member_id: UUID) -> bool:
+        return bool(
+            await self._pool().fetchval(
+                "SELECT EXISTS (SELECT 1 FROM members WHERE user_id = $1 AND id = $2)",
+                user_id,
+                member_id,
+            )
+        )
+
+    async def activity_sessions(self, user_id: UUID, activity_id: UUID) -> list[dict[str, Any]]:
+        rows = await self._pool().fetch(
+            """
+            SELECT s.id, s.session_date, s.start_time, s.end_time, a.name AS activity_name
+            FROM activities AS a
+            JOIN activity_sessions AS s ON s.activity_id = a.id
+            WHERE a.user_id = $1 AND a.id = $2
+            ORDER BY s.session_date, s.start_time NULLS LAST, s.id
+            """,
+            user_id,
+            activity_id,
+        )
+        return [
+            {
+                "id": str(row["id"]),
+                "session_date": row["session_date"].isoformat(),
+                "start_time": row["start_time"].isoformat() if row["start_time"] else None,
+                "end_time": row["end_time"].isoformat() if row["end_time"] else None,
+                "activity_name": row["activity_name"],
+            }
+            for row in rows
+        ]
+
+    async def member_scheduled_sessions(
+        self, user_id: UUID, member_id: UUID, *, exclude_activity_id: UUID | None = None
+    ) -> list[dict[str, Any]]:
+        rows = await self._pool().fetch(
+            """
+            SELECT s.id, s.session_date, s.start_time, s.end_time, a.name AS activity_name
+            FROM member_schedule_items AS item
+            JOIN activities AS a ON a.user_id = item.user_id AND a.id = item.activity_id
+            JOIN activity_sessions AS s ON s.activity_id = a.id
+            WHERE item.user_id = $1
+              AND item.member_id = $2
+              AND ($3::uuid IS NULL OR item.activity_id <> $3)
+            ORDER BY s.session_date, s.start_time NULLS LAST, s.id
+            """,
+            user_id,
+            member_id,
+            exclude_activity_id,
+        )
+        return [
+            {
+                "id": str(row["id"]),
+                "session_date": row["session_date"].isoformat(),
+                "start_time": row["start_time"].isoformat() if row["start_time"] else None,
+                "end_time": row["end_time"].isoformat() if row["end_time"] else None,
+                "activity_name": row["activity_name"],
+            }
+            for row in rows
+        ]
+
+    async def member_schedule(self, user_id: UUID, member_id: UUID) -> list[dict[str, Any]]:
+        rows = await self._pool().fetch(
+            """
+            SELECT a.id AS activity_id, a.name, a.location, a.description,
+                   s.id AS session_id, s.session_date, s.start_time, s.end_time
+            FROM member_schedule_items AS item
+            JOIN activities AS a ON a.user_id = item.user_id AND a.id = item.activity_id
+            LEFT JOIN activity_sessions AS s ON s.activity_id = a.id
+            WHERE item.user_id = $1 AND item.member_id = $2
+            ORDER BY a.name, s.session_date, s.start_time NULLS LAST
+            """,
+            user_id,
+            member_id,
+        )
+        items: dict[UUID, dict[str, Any]] = {}
+        for row in rows:
+            activity_id = UUID(str(row["activity_id"]))
+            item = items.setdefault(
+                activity_id,
+                {
+                    "activity_id": str(activity_id),
+                    "name": row["name"],
+                    "location": row["location"],
+                    "description": row["description"],
+                    "sessions": [],
+                },
+            )
+            if row["session_id"]:
+                item["sessions"].append(
+                    {
+                        "id": str(row["session_id"]),
+                        "session_date": row["session_date"].isoformat(),
+                        "start_time": row["start_time"].isoformat() if row["start_time"] else None,
+                        "end_time": row["end_time"].isoformat() if row["end_time"] else None,
+                    }
+                )
+        return list(items.values())
+
+    async def add_member_schedule_item(
+        self, user_id: UUID, member_id: UUID, activity_id: UUID
+    ) -> bool:
+        result = await self._pool().execute(
+            """
+            INSERT INTO member_schedule_items (user_id, member_id, activity_id)
+            SELECT $1, $2, $3
+            WHERE EXISTS (SELECT 1 FROM members WHERE user_id = $1 AND id = $2)
+              AND EXISTS (SELECT 1 FROM activities WHERE user_id = $1 AND id = $3)
+            ON CONFLICT (user_id, member_id, activity_id) DO NOTHING
+            """,
+            user_id,
+            member_id,
+            activity_id,
+        )
+        return result in {"INSERT 0 1", "INSERT 0 0"}
+
+    async def remove_member_schedule_item(
+        self, user_id: UUID, member_id: UUID, activity_id: UUID
+    ) -> bool:
+        return (
+            await self._pool().execute(
+                """
+                DELETE FROM member_schedule_items
+                WHERE user_id = $1 AND member_id = $2 AND activity_id = $3
+                """,
+                user_id,
+                member_id,
+                activity_id,
+            )
+        ) == "DELETE 1"
 
 
 async def apply_migrations(database_url: str, migrations_dir: Path) -> list[int]:
