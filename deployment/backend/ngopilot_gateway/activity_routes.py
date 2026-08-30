@@ -302,7 +302,12 @@ async def extract_activity_document(
         text_parts = (
             [await extract_image_text(filename, content, app_settings)]
             if is_image_document(filename)
-            else source_text_parts(filename, content, max_chars=app_settings.max_activity_text_chars)
+            else await asyncio.to_thread(
+                source_text_parts,
+                filename,
+                content,
+                max_chars=app_settings.max_activity_text_chars,
+            )
         )
     except ValueError as error:
         raise HTTPException(
@@ -337,6 +342,8 @@ async def run_activity_import_job(
     job_id: UUID, content: bytes, filename: str, app_settings: Settings
 ) -> None:
     job = activity_import_jobs[job_id]
+    # Let the endpoint flush its 202 response before extraction work begins.
+    await asyncio.sleep(0)
     try:
         job.result = await extract_activity_document(content, filename, app_settings)
         job.status = "ready"

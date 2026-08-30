@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import date, time
 from uuid import uuid4
 
@@ -11,6 +13,7 @@ from ngopilot_gateway.activity_routes import (
     activity_import_jobs,
     extract_activities_from_text_parts,
     extract_activities_with_kimi,
+    extract_activity_document,
     merge_extracted_activities,
     run_activity_import_job,
 )
@@ -270,6 +273,55 @@ async def test_background_import_job_reaches_review_ready(settings, monkeypatch)
     assert job.status == "ready"
     assert job.result is not None
     assert job.result["source_filename"] == "programme.pdf"
+
+
+async def test_background_import_job_yields_before_extraction(settings, monkeypatch) -> None:
+    job_id = uuid4()
+    activity_import_jobs[job_id] = ActivityImportJob(user_id=uuid4())
+    extraction_started = asyncio.Event()
+
+    async def extract_document(
+        _content: bytes, _filename: str, _settings: object
+    ) -> dict[str, object]:
+        extraction_started.set()
+        return {"activities": []}
+
+    monkeypatch.setattr(activity_routes, "extract_activity_document", extract_document)
+    task = asyncio.create_task(
+        run_activity_import_job(job_id, b"%PDF", "programme.pdf", settings)
+    )
+
+    await asyncio.sleep(0)
+
+    assert not extraction_started.is_set()
+    await task
+    activity_import_jobs.pop(job_id)
+
+
+async def test_pdf_parsing_runs_outside_event_loop(settings, monkeypatch) -> None:
+    parser_thread_id: int | None = None
+
+    def parse_document(
+        _filename: str, _content: bytes, *, max_chars: int
+    ) -> list[str]:
+        nonlocal parser_thread_id
+        del max_chars
+        parser_thread_id = threading.get_ident()
+        return ["Activity: Tai Chi\n2026-09-01 10:00-11:00"]
+
+    async def extract_parts(
+        _parts: list[str], _filename: str, _settings: object
+    ) -> tuple[list[ExtractedActivity], str]:
+        return [], "rules"
+
+    monkeypatch.setattr(activity_routes, "source_text_parts", parse_document)
+    monkeypatch.setattr(activity_routes, "extract_activities_from_text_parts", extract_parts)
+    event_loop_thread_id = threading.get_ident()
+
+    await extract_activity_document(b"%PDF", "programme.pdf", settings)
+
+    assert parser_thread_id is not None
+    assert parser_thread_id != event_loop_thread_id
 
 
 def test_activity_confirmation_keeps_database_date_and_time_types() -> None:
