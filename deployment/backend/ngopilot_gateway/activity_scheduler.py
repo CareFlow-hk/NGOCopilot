@@ -38,19 +38,32 @@ class ExtractedActivity:
     sessions: list[ExtractedSession] = field(default_factory=list)
 
 
-def pdf_to_text(content: bytes, *, max_chars: int) -> str:
-    """Extract selectable text from a PDF while bounding downstream model input."""
+def _split_text_in_half(text: str) -> tuple[str, str]:
+    """Split near the middle without breaking a word when possible."""
+    midpoint = len(text) // 2
+    window_start = max(1, midpoint - 2_000)
+    window_end = min(len(text) - 1, midpoint + 2_000)
+    candidates: list[int] = []
+    for separator in ("\n", " "):
+        before = text.rfind(separator, window_start, midpoint + 1)
+        after = text.find(separator, midpoint, window_end + 1)
+        if before > 0:
+            candidates.append(before)
+        if after > 0:
+            candidates.append(after)
+    boundary = min(candidates, key=lambda position: abs(position - midpoint)) if candidates else midpoint
+    return text[:boundary].strip(), text[boundary:].strip()
+
+
+def pdf_to_text_parts(content: bytes, *, max_chars: int) -> list[str]:
+    """Extract a PDF and split an oversized notice into two Kimi-safe parts."""
     try:
         reader = PdfReader(BytesIO(content))
         if reader.is_encrypted and reader.decrypt("") == 0:
             raise ValueError("The PDF is password protected")
         pages: list[str] = []
-        total_chars = 0
         for page in reader.pages:
             page_text = (page.extract_text() or "").strip()
-            total_chars += len(page_text)
-            if total_chars > max_chars:
-                raise ValueError("The PDF contains too much text to extract in one import")
             if page_text:
                 pages.append(page_text)
     except ValueError:
@@ -61,7 +74,20 @@ def pdf_to_text(content: bytes, *, max_chars: int) -> str:
     text = "\n".join(pages)
     if not text:
         raise ValueError("This PDF has no selectable text. Upload page images instead.")
-    return text
+    if len(text) <= max_chars:
+        return [text]
+    if len(text) > max_chars * 2:
+        raise ValueError("The PDF contains too much text to process in two parts")
+
+    first, second = _split_text_in_half(text)
+    if not first or not second or max(len(first), len(second)) > max_chars:
+        raise ValueError("The PDF cannot be split safely into two text parts")
+    return [first, second]
+
+
+def pdf_to_text(content: bytes, *, max_chars: int) -> str:
+    """Compatibility wrapper for callers that need the complete PDF text."""
+    return "\n".join(pdf_to_text_parts(content, max_chars=max_chars))
 
 
 def source_text(filename: str, content: bytes, *, max_chars: int = 120_000) -> str:
@@ -75,6 +101,13 @@ def source_text(filename: str, content: bytes, *, max_chars: int = 120_000) -> s
             raise ValueError("The document contains too much text to extract in one import")
         return text
     raise ValueError("Use a text, CSV, HTML, or text-based PDF activity notice")
+
+
+def source_text_parts(filename: str, content: bytes, *, max_chars: int = 120_000) -> list[str]:
+    """Return one document text part, or two balanced parts for a large PDF."""
+    if Path(filename).suffix.lower() == ".pdf":
+        return pdf_to_text_parts(content, max_chars=max_chars)
+    return [source_text(filename, content, max_chars=max_chars)]
 
 
 def is_image_document(filename: str) -> bool:

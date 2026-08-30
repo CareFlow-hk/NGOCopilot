@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from datetime import date, time
@@ -17,7 +18,7 @@ from .activity_scheduler import (
     check_conflicts,
     extract_activities,
     is_image_document,
-    source_text,
+    source_text_parts,
 )
 from .auth import AuthContext, database, require_auth, settings
 from .config import Settings
@@ -224,6 +225,59 @@ async def extract_activities_with_kimi(
         return None
 
 
+def merge_extracted_activities(
+    activity_sets: list[list[ExtractedActivity]],
+) -> list[ExtractedActivity]:
+    """Merge Kimi results from PDF halves without duplicating an activity or session."""
+    merged: dict[str, ExtractedActivity] = {}
+    seen_sessions: dict[str, set[tuple[object, object, object]]] = {}
+    for activities in activity_sets:
+        for activity in activities:
+            key = (activity.activity_code or activity.name).strip().casefold()
+            current = merged.get(key)
+            if current is None:
+                current = ExtractedActivity(
+                    name=activity.name,
+                    description=activity.description,
+                    location=activity.location,
+                    activity_code=activity.activity_code,
+                )
+                merged[key] = current
+                seen_sessions[key] = set()
+            elif not current.description:
+                current.description = activity.description
+            if not current.location:
+                current.location = activity.location
+            if not current.activity_code:
+                current.activity_code = activity.activity_code
+
+            for session in activity.sessions:
+                session_key = (session.session_date, session.start_time, session.end_time)
+                if session_key not in seen_sessions[key]:
+                    current.sessions.append(session)
+                    seen_sessions[key].add(session_key)
+    return list(merged.values())
+
+
+async def extract_activities_from_text_parts(
+    text_parts: list[str], filename: str, app_settings: Settings
+) -> tuple[list[ExtractedActivity], str]:
+    """Process one normal notice or two oversized PDF halves, then merge the review rows."""
+    kimi_results = await asyncio.gather(
+        *(extract_activities_with_kimi(text, filename, app_settings) for text in text_parts)
+    )
+    activity_sets: list[list[ExtractedActivity]] = []
+    extraction_methods: list[str] = []
+    for text, kimi_activities in zip(text_parts, kimi_results, strict=True):
+        if kimi_activities is None:
+            activity_sets.append(extract_activities(text, filename))
+            extraction_methods.append("rules")
+        else:
+            activity_sets.append(kimi_activities)
+            extraction_methods.append("kimi")
+    return merge_extracted_activities(activity_sets), "+".join(sorted(set(extraction_methods)))
+
+
 @router.post("/activity-import")
 async def extract_activity_import(
     file: UploadFile = File(...),
@@ -240,18 +294,16 @@ async def extract_activity_import(
             detail=f"Activity documents must be {limit_mb} MB or smaller",
         )
     try:
-        text = (
-            await extract_image_text(filename, content, app_settings)
+        text_parts = (
+            [await extract_image_text(filename, content, app_settings)]
             if is_image_document(filename)
-            else source_text(filename, content, max_chars=app_settings.max_activity_text_chars)
+            else source_text_parts(filename, content, max_chars=app_settings.max_activity_text_chars)
         )
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
-    activities = await extract_activities_with_kimi(text, filename, app_settings)
-    extraction_method = "kimi"
-    if activities is None:
-        activities = extract_activities(text, filename)
-        extraction_method = "rules"
+    activities, extraction_method = await extract_activities_from_text_parts(
+        text_parts, filename, app_settings
+    )
     return {
         "source_filename": filename,
         "extraction_method": extraction_method,

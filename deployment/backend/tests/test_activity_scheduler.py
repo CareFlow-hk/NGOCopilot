@@ -7,13 +7,18 @@ from ngopilot_gateway import activity_routes
 from ngopilot_gateway.activity_routes import (
     ActivityInput,
     activities_from_kimi_json,
+    extract_activities_from_text_parts,
     extract_activities_with_kimi,
+    merge_extracted_activities,
 )
 from ngopilot_gateway.activity_scheduler import (
+    ExtractedActivity,
+    ExtractedSession,
     check_conflicts,
     extract_activities,
     is_image_document,
     pdf_to_text,
+    pdf_to_text_parts,
 )
 from ngopilot_gateway.db import Database
 
@@ -118,6 +123,30 @@ def test_pdf_to_text_extracts_pages_and_bounds_model_input(monkeypatch) -> None:
     assert pdf_to_text(b"%PDF", max_chars=100) == "First notice\nSecond notice"
 
 
+def test_pdf_to_text_splits_an_oversized_notice_into_two_parts(monkeypatch) -> None:
+    class Page:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def extract_text(self) -> str:
+            return self.text
+
+    class Reader:
+        is_encrypted = False
+        pages = [Page("A" * 60), Page("B" * 60)]
+
+        def __init__(self, _source: object) -> None:
+            pass
+
+    monkeypatch.setattr("ngopilot_gateway.activity_scheduler.PdfReader", Reader)
+
+    parts = pdf_to_text_parts(b"%PDF", max_chars=70)
+
+    assert len(parts) == 2
+    assert all(len(part) <= 70 for part in parts)
+    assert "".join(parts) == "A" * 60 + "B" * 60
+
+
 def test_kimi_activity_json_is_validated_for_review() -> None:
     activities = activities_from_kimi_json(
         '{"activities":[{"name":"Tai Chi Class","location":"Community Hall",'
@@ -173,6 +202,47 @@ async def test_kimi_extraction_requests_json_from_the_configured_model(settings,
     assert isinstance(payload, dict)
     assert payload["model"] == settings.goose_model
     assert payload["response_format"] == {"type": "json_object"}
+
+
+async def test_pdf_halves_are_processed_and_merged(settings, monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def extract_part(text: str, _filename: str, _settings: object) -> list[ExtractedActivity]:
+        calls.append(text)
+        return [
+            ExtractedActivity(
+                name="Tai Chi Class",
+                location="Community Hall",
+                sessions=[
+                    ExtractedSession(
+                        session_date=date.fromisoformat("2026-09-01" if text == "first" else "2026-09-08"),
+                        start_time=time(10, 0),
+                        end_time=time(11, 0),
+                    )
+                ],
+            )
+        ]
+
+    monkeypatch.setattr(activity_routes, "extract_activities_with_kimi", extract_part)
+
+    activities, method = await extract_activities_from_text_parts(
+        ["first", "second"], "large-notice.pdf", settings
+    )
+
+    assert calls == ["first", "second"]
+    assert method == "kimi"
+    assert len(activities) == 1
+    assert len(activities[0].sessions) == 2
+
+
+def test_merge_extracted_activities_deduplicates_repeated_sessions() -> None:
+    session = ExtractedSession(date(2026, 9, 1), time(10, 0), time(11, 0))
+    activities = merge_extracted_activities(
+        [[ExtractedActivity(name="Tai Chi", sessions=[session])], [ExtractedActivity(name="tai chi", sessions=[session])]]
+    )
+
+    assert len(activities) == 1
+    assert len(activities[0].sessions) == 1
 
 
 def test_activity_confirmation_keeps_database_date_and_time_types() -> None:
