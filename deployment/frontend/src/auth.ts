@@ -1,6 +1,11 @@
 const TOKEN_KEY = "ngopilot.auth.token";
+const PRODUCTION_API_URL = "https://ngopilot-api-production.up.railway.app";
 
-export const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+// Render may omit optional build-time variables. Keep the deployed sign-in
+// flow connected to the production API while preserving local relative calls.
+export const API_BASE = (
+  import.meta.env.VITE_API_URL || (import.meta.env.PROD ? PRODUCTION_API_URL : "")
+).replace(/\/+$/, "");
 
 export class ApiError extends Error {
   constructor(

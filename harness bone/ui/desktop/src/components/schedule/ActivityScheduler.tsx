@@ -41,7 +41,8 @@ type ConflictResult = {
   conflicts: Array<{ existing_activity?: string; new_session: Session; existing_session: Session }>;
 };
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+const PRODUCTION_API_URL = 'https://ngopilot-api-production.up.railway.app';
+const API_BASE = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? PRODUCTION_API_URL : '')).replace(/\/+$/, '');
 const token = () => localStorage.getItem('ngopilot.auth.token');
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
