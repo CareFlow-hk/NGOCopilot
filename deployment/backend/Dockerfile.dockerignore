@@ -4,6 +4,10 @@
 AGENTS.md
 config.py
 report.md
+.local-workbench
+.venv-workbench
+**/.env
+**/.env.local
 
 **/.DS_Store
 **/.pytest_cache
