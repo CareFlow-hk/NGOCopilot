@@ -1,0 +1,18 @@
+# 交付版本
+
+2026-10-02。產品程式驗收所對應的 Git 版本：
+
+| 專案 | 程式快照 | 分支 | 入口 |
+|---|---|---|---|
+| NGOPilot | `d62fc51` | `codex/takeover-ngopilot` | http://127.0.0.1:8310 |
+| CareFlow Scheduler | `20045e0` | `codex/initial-release` | http://127.0.0.1:8311 |
+
+後續提交只整理驗收文件與排除可重建的 egg-info，不改變已驗證工作流程。尚未推送遠端或部署公網。
+
+Opus 5.5 最終產品簽核見 [opus-final-signoff.md](opus-final-signoff.md)。P0-1 審核門檻與 P0-2 日期／星期一致性已關閉；簽核依據為工程提供的結果，不宣稱獨立人類專家審查。
+
+服務已用交付腳本啟動。停止可在各自啟動終端 Ctrl-C；重新啟動指令及資料備份位置見 [HANDOVER.md](HANDOVER.md)。公開演示只使用 samples 中的合成資料及 Scheduler 公開歷史活動冊。
+
+最終 API 負面檢查：未審核紙本 export 回傳 INVALID_REQUEST；blocked 排班 export 回傳 HTTP 409。瀏覽器確認紙本原圖載入、原始值保留、沒有審核前匯出按鈕；會議原錄音播放器讀到 32.526893 秒，無媒體錯誤。
+
+已核對待提交檔案不含當前 provider.env 的已知金鑰字面值，也不含 `.local-workbench`、`.data`、環境檔或虛擬環境。這是指定值及路徑檢查，不是任意秘密可被完全偵測的保證。
