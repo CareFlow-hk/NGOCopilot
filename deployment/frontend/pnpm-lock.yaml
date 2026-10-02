@@ -20,6 +20,9 @@ importers:
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.1.1
         version: 1.7.5(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@3.25.76)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(zod@3.25.76)
       '@radix-ui/react-accordion':
         specifier: ^1.2.12
         version: 1.2.20(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

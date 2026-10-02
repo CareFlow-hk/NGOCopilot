@@ -204,3 +204,22 @@ def test_export_passes_reviewed_rows_only_to_native_writer(
     assert result["result"]["export"]["row_count"] == 1
     assert result["artifact_path"] == str(output)
     assert "Partial export" in result["warnings"][0]
+
+
+def test_vision_diagnostics_use_managed_data_and_redact(tmp_path, monkeypatch):
+    import json
+
+    secret = "synthetic-private-key-12345"
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", secret)
+    vision = SimpleNamespace(_log_path=lambda: tmp_path / "immutable" / "vision.log")
+
+    def log(kind, **fields):
+        vision._log_path().write_text(json.dumps({"kind": kind, **fields}))
+
+    vision._log_event = log
+    native_adapter._isolate_vision_diagnostics(vision, tmp_path / "managed")
+    vision._log_event("failure", error=f"Bearer {secret}")
+    result = (tmp_path / "managed/logs/vision.log").read_text()
+    assert secret not in result
+    assert "failure" in result
+    assert not (tmp_path / "immutable").exists()

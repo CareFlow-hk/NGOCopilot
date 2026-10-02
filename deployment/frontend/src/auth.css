@@ -10,6 +10,10 @@ body.ngopilot-auth-active {
   box-sizing: border-box;
 }
 
+.auth-shell [hidden] {
+  display: none !important;
+}
+
 .auth-shell {
   min-height: 100dvh;
   display: grid;

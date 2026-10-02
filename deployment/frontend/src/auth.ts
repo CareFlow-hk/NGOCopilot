@@ -63,7 +63,7 @@ async function jsonRequest(path: string, init: RequestInit = {}): Promise<unknow
         ? (payload as Record<string, unknown>).detail ??
           (payload as Record<string, unknown>).message
         : null;
-    throw new ApiError(typeof detail === "string" ? detail : "Request failed", response.status);
+    throw new ApiError(typeof detail === "string" ? detail : "請求未完成，請檢查資料後重試", response.status);
   }
   return payload;
 }
@@ -82,27 +82,27 @@ function renderAuthGate(root: HTMLElement): Promise<void> {
       <main class="auth-shell">
         <section class="auth-panel" aria-labelledby="auth-title">
           <div class="auth-brand">NGOPilot</div>
-          <h1 id="auth-title">Sign in to continue</h1>
-          <p class="auth-intro">Your work, sessions, and generated files stay with your account.</p>
-          <div class="auth-modes" role="tablist" aria-label="Account action">
-            <button type="button" class="is-active" role="tab" aria-selected="true" data-mode="login">Sign in</button>
-            <button type="button" role="tab" aria-selected="false" data-mode="register">Create account</button>
+          <h1 id="auth-title">登入文件工作台</h1>
+          <p class="auth-intro">工作記錄與產生的檔案會保存在你的帳戶。</p>
+          <div class="auth-modes" role="tablist" aria-label="帳戶操作">
+            <button type="button" class="is-active" role="tab" aria-selected="true" data-mode="login">登入</button>
+            <button type="button" role="tab" aria-selected="false" data-mode="register">建立帳戶</button>
           </div>
           <form class="auth-form">
             <label class="auth-name" hidden>
-              <span>Name</span>
+              <span>姓名</span>
               <input name="name" autocomplete="name" />
             </label>
             <label>
-              <span>Email</span>
+              <span>電郵</span>
               <input name="email" type="email" autocomplete="email" required />
             </label>
             <label>
-              <span>Password</span>
+              <span>密碼</span>
               <input name="password" type="password" autocomplete="current-password" minlength="8" required />
             </label>
             <p class="auth-error" role="alert" hidden></p>
-            <button class="auth-submit" type="submit">Sign in</button>
+            <button class="auth-submit" type="submit">登入</button>
           </form>
         </section>
       </main>
@@ -128,8 +128,8 @@ function renderAuthGate(root: HTMLElement): Promise<void> {
         nameField.hidden = !registering;
         nameInput.required = registering;
         passwordInput.autocomplete = registering ? "new-password" : "current-password";
-        title.textContent = registering ? "Create your account" : "Sign in to continue";
-        submit.textContent = registering ? "Create account" : "Sign in";
+        title.textContent = registering ? "建立你的帳戶" : "登入文件工作台";
+        submit.textContent = registering ? "建立帳戶" : "登入";
         error.hidden = true;
       });
     });
@@ -138,7 +138,7 @@ function renderAuthGate(root: HTMLElement): Promise<void> {
       event.preventDefault();
       error.hidden = true;
       submit.disabled = true;
-      submit.textContent = mode === "register" ? "Creating account..." : "Signing in...";
+      submit.textContent = mode === "register" ? "正在建立帳戶…" : "正在登入…";
 
       const values = new FormData(form);
       const body: Record<string, string> = {
@@ -159,11 +159,11 @@ function renderAuthGate(root: HTMLElement): Promise<void> {
         root.innerHTML = "";
         resolve();
       } catch (cause) {
-        error.textContent = cause instanceof Error ? cause.message : "Unable to continue";
+        error.textContent = cause instanceof Error ? cause.message : "暫時未能繼續，請重試";
         error.hidden = false;
       } finally {
         submit.disabled = false;
-        submit.textContent = mode === "register" ? "Create account" : "Sign in";
+        submit.textContent = mode === "register" ? "建立帳戶" : "登入";
       }
     });
   });

@@ -92,6 +92,25 @@ def test_request_id_reuse_with_changed_payload_fails(runtime: Runtime) -> None:
         )
 
 
+def test_provider_secret_is_not_persisted_on_failure(runtime: Runtime, monkeypatch) -> None:
+    secret = "example-provider-key-7654321"
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    job = runtime.create_job(tool_name="example", request_id=None, input_payload={})
+    handle = runtime.begin_operation(
+        job=job, operation="start", request_id=None, payload={}
+    )
+    response = runtime.fail_operation(
+        job=job, handle=handle, error=RuntimeError(f"Provider failed: {secret}")
+    )
+    assert secret not in str(response.as_dict())
+    with sqlite3.connect(runtime.settings.database_path) as db:
+        rows = db.execute("SELECT error_json, response_json FROM operations").fetchall()
+        assert secret not in str(rows)
+        assert "[REDACTED]" in str(rows)
+    manifest = runtime.settings.jobs_root / "example" / job.job_id / "manifest.json"
+    assert secret not in manifest.read_text()
+
+
 def test_failed_followup_preserves_last_successful_stage(runtime: Runtime) -> None:
     job = runtime.create_job(
         tool_name="example",

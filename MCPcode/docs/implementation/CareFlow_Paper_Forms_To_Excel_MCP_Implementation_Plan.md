@@ -1,3 +1,5 @@
+> **2026-10-02 contract superseded:** This file preserves the historical implementation plan. Automatic approval is removed. The current public flow is `start → review → export`; `start`/`status` never call review. `review` is publicly advertised and requires explicit user confirmation; export rejects jobs with no reviewed records. The workbench additionally requires a reviewer and source-confirmation checkbox. See `docs/takeover/HANDOVER.md` and current controller/schema tests. References to automatic approval below are historical, not implementation instructions.
+
 # CareFlow Paper Forms to Excel MCP Implementation Plan
 
 Status: implemented; principal lifecycle verified; release hardening tracked below  

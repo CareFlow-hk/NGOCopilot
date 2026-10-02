@@ -12,6 +12,7 @@ from typing import Any
 from ...config import Settings
 from ..errors import ToolError
 from ..jsonutil import jsonable
+from ..redaction import redact_text
 from ..tool_api import WorkerName
 from .protocol import WorkerRequest
 
@@ -88,6 +89,7 @@ class WorkerClient:
                 [
                     str(python),
                     "-I",
+                    "-B",
                     "-c",
                     _WORKER_LAUNCHER,
                     package_src,
@@ -108,7 +110,7 @@ class WorkerClient:
             ) from exc
 
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text(completed.stderr[-1_000_000:], encoding="utf-8")
+        log_path.write_text(redact_text(completed.stderr)[-1_000_000:], encoding="utf-8")
         try:
             response = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:

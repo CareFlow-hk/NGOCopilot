@@ -167,20 +167,6 @@ class PaperFormsToExcelController:
             }
             native_refs["record_source_paths"] = source_map
             warnings = start_warnings(len(staged_paths)) + native_warnings
-            (
-                result,
-                native_status,
-                native_refs,
-                warnings,
-            ) = await self._auto_approve_pending(
-                runtime=runtime,
-                job=job,
-                batch_id=native_refs.get("batch_id"),
-                result=result,
-                native_status=native_status,
-                native_refs=native_refs,
-                warnings=warnings,
-            )
             result = add_source_paths(result, source_map)
             return runtime.complete_operation(
                 job=job,
@@ -206,7 +192,6 @@ class PaperFormsToExcelController:
             runtime=runtime,
             job=job,
             payload={"native_batch_id": batch_id},
-            auto_approve=True,
         )
 
     async def _review(self, request: ReviewCall, runtime: ToolRuntime) -> ToolExecution:
@@ -295,58 +280,16 @@ class PaperFormsToExcelController:
             )
         return reviews
 
-    async def _auto_approve_pending(
-        self,
-        *,
-        runtime: ToolRuntime,
-        job: Any,
-        batch_id: Any,
-        result: dict[str, Any],
-        native_status: str,
-        native_refs: dict[str, Any],
-        warnings: list[str | dict[str, Any]],
-    ) -> tuple[
-        dict[str, Any],
-        str,
-        dict[str, Any],
-        list[str | dict[str, Any]],
-    ]:
-        if native_status != "pending_review":
-            return result, native_status, native_refs, warnings
-        if not isinstance(batch_id, int) or isinstance(batch_id, bool) or batch_id <= 0:
-            raise ToolError(
-                "NATIVE_PROTOCOL_ERROR",
-                "CareFlow omitted the batch ID required for automatic approval.",
-            )
-
-        reviews = self._reviews_from_result(
-            result,
-            reviewer="NGOPilot automatic approval",
-        )
-        response = await runtime.call_worker(
-            worker=MANIFEST.worker,
-            tool_name=MANIFEST.name,
-            operation="review",
-            job=job,
-            payload={"native_batch_id": batch_id, "reviews": reviews},
-        )
-        reviewed_result, reviewed_status, reviewed_refs, reviewed_warnings = (
-            unpack_worker_result(response)
-        )
-        refs = dict(native_refs)
-        refs.update(reviewed_refs)
-        return (
-            reviewed_result,
-            reviewed_status,
-            refs,
-            [*warnings, *reviewed_warnings],
-        )
-
     async def _export(self, request: ExportCall, runtime: ToolRuntime) -> ToolExecution:
         job = runtime.get_job(tool_name=MANIFEST.name, job_id=request.job_id)
         batch_id = native_batch_id(job)
         if batch_id is None:
             raise InvalidRequestError("This job has no CareFlow batch to export.")
+        if not any(
+            isinstance(record, dict) and record.get("is_reviewed") is True
+            for record in getattr(job, "result", {}).get("records", [])
+        ):
+            raise InvalidRequestError("Confirm at least one extracted record before export.")
 
         handle = runtime.begin_operation(
             job=job,
@@ -410,7 +353,6 @@ class PaperFormsToExcelController:
         runtime: ToolRuntime,
         job: Any,
         payload: dict[str, Any],
-        auto_approve: bool = False,
     ) -> ToolExecution:
         operation_payload = request.input.model_dump(mode="json")
         handle = runtime.begin_operation(
@@ -434,16 +376,6 @@ class PaperFormsToExcelController:
             )
             refs = dict(getattr(job, "native_refs", {}))
             refs.update(native_refs)
-            if auto_approve:
-                result, native_status, refs, warnings = await self._auto_approve_pending(
-                    runtime=runtime,
-                    job=job,
-                    batch_id=refs.get("batch_id"),
-                    result=result,
-                    native_status=native_status,
-                    native_refs=refs,
-                    warnings=warnings,
-                )
             result = add_source_paths(result, refs.get("record_source_paths", {}))
             return runtime.complete_operation(
                 job=job,

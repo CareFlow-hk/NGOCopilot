@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .redaction import redact_diagnostic
+
 
 @dataclass(slots=True)
 class ToolError(Exception):
@@ -19,14 +21,16 @@ class ToolError(Exception):
         Exception.__init__(self, self.message)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "code": self.code,
-            "message": self.message,
-            "retryable": self.retryable,
-            "native_code": self.native_code,
-            "native_message": self.native_message,
-            "details": self.details,
-        }
+        return redact_diagnostic(
+            {
+                "code": self.code,
+                "message": self.message,
+                "retryable": self.retryable,
+                "native_code": self.native_code,
+                "native_message": self.native_message,
+                "details": self.details,
+            }
+        )
 
 
 class InvalidRequestError(ToolError):

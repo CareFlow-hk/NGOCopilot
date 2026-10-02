@@ -187,7 +187,8 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
         )
     )
 
-    assert execution.state == "reviewed"
+    assert execution.state == "pending_review"
+    assert execution.next_operations == ["status", "review"]
     assert runtime.staged[0]["role"] == "completed_form_image_001"
     assert runtime.staged[0]["content_kind"] == "image"
     worker_payload = runtime.worker_calls[0]["payload"]
@@ -202,11 +203,7 @@ def test_start_stages_named_image_role_and_routes_only_staged_path(
         == worker_payload["image_paths"][0]
     )
     assert execution.native_refs["batch_id"] == 41
-    assert [call["operation"] for call in runtime.worker_calls] == ["start", "review"]
-    automatic_review = runtime.worker_calls[1]["payload"]["reviews"][0]
-    assert automatic_review["record_id"] == 101
-    assert automatic_review["reviewer"] == "NGOPilot automatic approval"
-    assert tuple(automatic_review["final_fields"]) == FIELD_KEYS
+    assert [call["operation"] for call in runtime.worker_calls] == ["start"]
 
 
 def test_start_derives_title_from_single_filename_when_metadata_is_omitted(
@@ -275,7 +272,7 @@ def test_review_routes_complete_fields_and_preserves_native_result(
     assert execution.result["records"][0]["source_path"] == "/staged/form.jpg"
 
 
-def test_status_auto_approves_an_older_pending_job(tmp_path: Path) -> None:
+def test_status_never_approves_an_older_pending_job(tmp_path: Path) -> None:
     runtime = FakeRuntime(
         tmp_path,
         {
@@ -292,9 +289,9 @@ def test_status_auto_approves_an_older_pending_job(tmp_path: Path) -> None:
         )
     )
 
-    assert execution.state == "reviewed"
-    assert execution.next_operations == ["status", "export"]
-    assert [call["operation"] for call in runtime.worker_calls] == ["status", "review"]
+    assert execution.state == "pending_review"
+    assert execution.next_operations == ["status", "review"]
+    assert [call["operation"] for call in runtime.worker_calls] == ["status"]
 
 
 def test_confirm_all_copies_complete_unreviewed_values_from_job(tmp_path: Path) -> None:
@@ -374,6 +371,7 @@ def test_partial_export_promotes_native_workbook_and_returns_owned_path(
         }
     )
     runtime = FakeRuntime(tmp_path / "mcp", {"export": response})
+    runtime.job.result = _worker_snapshot("confirmed")["result"]
     runtime.job.native_refs = {"batch_id": 41, "record_ids": [101]}
 
     execution = asyncio.run(
@@ -438,6 +436,9 @@ def test_minimal_start_export_lifecycle(tmp_path: Path) -> None:
             runtime,
         )
     )
+    with pytest.raises(InvalidRequestError, match="Confirm"):
+        asyncio.run(CONTROLLER.execute(ToolCall(operation="export", job_id=started.job_id), runtime))
+    asyncio.run(CONTROLLER.execute(ToolCall(operation="review", job_id=started.job_id, input={"confirm_all": True}), runtime))
     exported = asyncio.run(
         CONTROLLER.execute(
             ToolCall(operation="export", job_id=started.job_id),
@@ -445,8 +446,8 @@ def test_minimal_start_export_lifecycle(tmp_path: Path) -> None:
         )
     )
 
-    assert started.state == "reviewed"
-    assert started.next_operations == ["status", "export"]
+    assert started.state == "pending_review"
+    assert started.next_operations == ["status", "review"]
     assert [call["operation"] for call in runtime.worker_calls] == [
         "start",
         "review",

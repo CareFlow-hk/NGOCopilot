@@ -203,7 +203,7 @@ class StatusCall(StrictModel):
 
 class ReviewCall(StrictModel):
     operation: Literal["review"] = Field(
-        description="Compatibility operation for explicit corrections."
+        description="Confirm extracted records after explicit human review."
     )
     job_id: StrictStr = Field(description="The job_id returned by start.")
     request_id: StrictStr | None = None
@@ -212,7 +212,7 @@ class ReviewCall(StrictModel):
 
 class ExportCall(StrictModel):
     operation: Literal["export"] = Field(
-        description="Create the verified Excel artifact after automatic approval."
+        description="Create the Excel artifact from explicitly reviewed records."
     )
     job_id: StrictStr = Field(description="The job_id returned by start.")
     request_id: StrictStr | None = None
@@ -232,24 +232,27 @@ def public_input_schema() -> dict[str, Any]:
 
     start_schema = StartInput.model_json_schema()
     input_properties = deepcopy(start_schema["properties"])
+    review_schema = ReviewInput.model_json_schema()
+    input_properties.update(deepcopy(review_schema["properties"]))
     return {
         "type": "object",
+        "$defs": review_schema.get("$defs", {}),
         "additionalProperties": False,
         "properties": {
             "operation": {
                 "type": "string",
-                "enum": ["start", "status", "export"],
+                "enum": ["start", "status", "review", "export"],
                 "description": (
                     "start requires input.image_paths and no job_id; status requires "
-                    "the returned job_id; export requires that job_id after automatic "
-                    "approval and appears in next_operations."
+                    "the returned job_id; review requires explicit user confirmation; "
+                    "export requires reviewed rows and appears in next_operations."
                 ),
             },
             "job_id": {
                 "anyOf": [{"type": "string"}, {"type": "null"}],
                 "default": None,
                 "description": (
-                    "Omit for start. For status and export, copy the exact "
+                    "Omit for start. For status, review and export, copy the exact "
                     "job_id returned by start."
                 ),
             },
@@ -263,7 +266,8 @@ def public_input_schema() -> dict[str, Any]:
                 "additionalProperties": False,
                 "description": (
                     "For start, send image_paths plus optional metadata. Omit for "
-                    "status and export; extracted records are approved automatically."
+                    "status and export. For review, send confirm_all=true only after human "
+                    "confirmation, or reviews with complete corrected final_fields."
                 ),
                 "properties": input_properties,
             },

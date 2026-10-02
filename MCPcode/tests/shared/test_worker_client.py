@@ -65,8 +65,8 @@ def test_worker_uses_managed_site_packages_before_host_package(
 
     command = observed["command"]
     assert isinstance(command, list)
-    assert command[1:3] == ["-I", "-c"]
-    assert "sys.path.append" in command[3]
+    assert command[1:4] == ["-I", "-B", "-c"]
+    assert "sys.path.append" in command[4]
     assert command[-1] == "ngopilot_mcp.workers.careflow_worker"
     env = observed["env"]
     assert isinstance(env, dict)

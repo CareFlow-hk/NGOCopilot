@@ -11,6 +11,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from ngopilot_mcp.shared.redaction import redact_diagnostic
+
+
+def _isolate_vision_diagnostics(vision: Any, data_root: Path) -> None:
+    """Redirect the legacy source-relative logger into managed application data."""
+    log_path = data_root / "logs" / "vision.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    vision._log_path = lambda: log_path
+    if not getattr(vision._log_event, "_ngopilot_isolated", False):
+        native_log = vision._log_event
+
+        def log_event(kind: str, **fields: Any) -> None:
+            native_log(kind, **redact_diagnostic(fields))
+
+        log_event._ngopilot_isolated = True
+        vision._log_event = log_event
+
 
 def _native_bindings() -> SimpleNamespace:
     from app.config import settings
@@ -26,6 +43,8 @@ def _native_bindings() -> SimpleNamespace:
     # copy the factory functions into module globals during import.
     from app.llm import text, vision
 
+    _isolate_vision_diagnostics(vision, settings.data_path)
+    _isolate_vision_diagnostics(text, settings.data_path)
     llm_adapter.bind(text, vision)
 
     from app.api.volunteer import BatchOut, _record_to_out

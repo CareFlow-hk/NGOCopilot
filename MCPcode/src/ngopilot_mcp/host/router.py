@@ -66,7 +66,13 @@ class Router:
                     ToolError(
                         "INVALID_REQUEST",
                         "The tool request failed schema validation.",
-                        details={"errors": exc.errors(include_url=False)},
+                        details={
+                            "errors": exc.errors(
+                                include_url=False,
+                                include_input=False,
+                                include_context=False,
+                            )
+                        },
                     ),
                 )
             except ToolError as exc:

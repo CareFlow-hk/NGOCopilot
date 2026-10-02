@@ -1,0 +1,13 @@
+
+> ngopilot-cloud-frontend@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /Users/jiahangx/Projects/NGOPilot/deployment/frontend
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  18:59:07
+   Duration  856ms (transform 50ms, setup 0ms, import 59ms, tests 11ms, environment 688ms)
+

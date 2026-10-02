@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ngopilot_mcp.shared.jsonutil import jsonable
+from ngopilot_mcp.shared.redaction import redact_diagnostic, redact_text
 from ngopilot_mcp.shared.workers.protocol import PROTOCOL_VERSION
 
 
@@ -44,7 +45,7 @@ def run_worker(worker_name: str, allowed_tools: set[str]) -> None:
             )
         except Exception:
             pass
-        sys.stdout.write(json.dumps(response, ensure_ascii=False))
+        sys.stdout.write(json.dumps(redact_diagnostic(response), ensure_ascii=False))
         raise SystemExit(1)
 
 
@@ -72,7 +73,9 @@ def _configure_application(worker_name: str, request: dict[str, Any]) -> None:
         os.environ["ROSTER_EXPORT_DIR"] = str(app_data / "exports")
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
-    os.chdir(source)
+    # Native services may create relative logs or temporary files. Keep those
+    # writes inside tenant state; the vendored application source is immutable.
+    os.chdir(app_data)
 
 
 def _invoke(request: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -96,4 +99,4 @@ def _append_log(request: dict[str, Any], content: str) -> None:
     log = root / "logs" / f"{request.get('operation', 'worker')}.native.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a", encoding="utf-8") as stream:
-        stream.write(content[-1_000_000:])
+        stream.write(redact_text(content)[-1_000_000:])

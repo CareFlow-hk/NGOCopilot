@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-02",
+  "kind": "Developer acceptance; synthetic data; not NGO validation",
+  "artifacts": [
+    {
+      "sample": "paper-reviewed.xlsx",
+      "size": 5740,
+      "sha256": "1ee322a6f22fdbd87cd118905871594897940869b6d435e7592de9cd77a04f81",
+      "api_download_verified": true
+    },
+    {
+      "sample": "meeting-reviewed.docx",
+      "size": 38404,
+      "sha256": "259ab3e957581fd6789c10fb3c4dd4555f2bb694ae52cd778b0cbf2bb99354c6",
+      "api_download_verified": true
+    },
+    {
+      "sample": "government-reviewed.pdf",
+      "size": 1470719,
+      "sha256": "a21c5c66fcef08abfd86e389e5aa7cad87b883f531b94d5d2334fc901db76e41",
+      "api_download_verified": true
+    }
+  ],
+  "paper": {
+    "kind": "paper",
+    "operation_id": "0230a104-e791-443f-bd26-496e1f0f5d66",
+    "job_id": "job_c4cd180c4fc240438b7aa321c4f45772",
+    "state": "pending_review",
+    "error": null,
+    "block_reason_count": 0,
+    "audit_item_count": 0,
+    "next_operations": [
+      "status",
+      "review"
+    ]
+  },
+  "roster": {
+    "kind": "roster",
+    "operation_id": "4a3ef863-a18f-41c6-9d27-05e6ed163ada",
+    "job_id": "job_528736226102435ba77f4ad4dc8da2fe",
+    "state": "blocked",
+    "error": null,
+    "block_reason_count": 2,
+    "audit_item_count": 296,
+    "next_operations": [
+      "status",
+      "revalidate",
+      "review",
+      "export"
+    ]
+  }
+}

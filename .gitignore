@@ -10,3 +10,7 @@
 *.log
 /config.py
 /testcases/
+
+# Local human-reviewed workbench runtime
+.local-workbench/
+.venv-workbench/

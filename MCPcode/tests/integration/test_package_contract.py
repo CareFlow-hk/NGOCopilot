@@ -59,8 +59,8 @@ async def test_fastmcp_advertises_exactly_four_tools(tmp_path: Path) -> None:
         tool for tool in tools if tool.name == "careflow_paper_forms_to_excel"
     )
     assert "title and other metadata are optional" in (paper_forms.description or "")
-    assert "approved automatically" in (paper_forms.description or "")
-    assert "without asking for review or confirmation" in (
+    assert "explicit human confirmation" in (paper_forms.description or "")
+    assert "never infer approval" in (
         paper_forms.description or ""
     )
     assert "artifacts[0].path" in (paper_forms.description or "")
@@ -68,12 +68,13 @@ async def test_fastmcp_advertises_exactly_four_tools(tmp_path: Path) -> None:
     assert set(paper_forms.inputSchema["properties"]["operation"]["enum"]) == {
         "start",
         "status",
+        "review",
         "export",
     }
     assert "image_paths" in paper_forms.inputSchema["properties"]["input"][
         "properties"
     ]
-    assert "reviews" not in paper_forms.inputSchema["properties"]["input"]["properties"]
+    assert "reviews" in paper_forms.inputSchema["properties"]["input"]["properties"]
 
     for tool in tools:
         if tool.name == paper_forms.name:

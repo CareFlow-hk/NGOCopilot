@@ -7,7 +7,11 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "zod": ["node_modules/zod"]
+      "zod": ["node_modules/zod"],
+      "@agentclientprotocol/sdk": ["node_modules/@agentclientprotocol/sdk"],
+      "@modelcontextprotocol/ext-apps/app-bridge": ["node_modules/@modelcontextprotocol/ext-apps/dist/src/app-bridge.d.ts"],
+      "@modelcontextprotocol/ext-apps/server": ["node_modules/@modelcontextprotocol/ext-apps/dist/src/server/index.d.ts"],
+      "@modelcontextprotocol/sdk/*": ["node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
     },
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
