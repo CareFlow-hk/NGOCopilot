@@ -222,7 +222,7 @@ export default function WorkflowTaskCard({ initial, append }: { initial: Data; a
       {(result.field_schema || Object.keys(review.final_fields).map((key) => ({ key, label: key }))).map((field: Data) => <Field key={field.key} label={field.label || field.key} kind={field.type} options={field.options} value={review.final_fields[field.key]} onChange={(value) => edit({ ...draft, reviews: draft.reviews.map((item: Data, i: number) => i === index ? { ...item, final_fields: { ...item.final_fields, [field.key]: value } } : item) })} />)}
     </fieldset>)}
     {job.tool === 'careflow_meeting_notes' && <>
-      {result.transcript_snippet && <details className="mb-3 text-sm"><summary>對照錄音轉寫</summary><p className="mt-2 whitespace-pre-wrap">{result.transcript_snippet}</p></details>}
+      {result.transcript_snippet && <details className="mb-3 text-sm"><summary>對照轉寫原文</summary><p className="mt-2 whitespace-pre-wrap">{result.transcript_snippet}</p></details>}
       <fieldset disabled={job.state === 'exported'} className="grid gap-3">{Object.entries(draft.slot_content_final || {}).map(([key, value]) => <Field key={key} label={result.template_contract?.dynamic_slots?.find((slot: Data) => slot.slot_id === key)?.label_hint || key} value={value} onChange={(next) => edit({ slot_content_final: { ...draft.slot_content_final, [key]: next } })} />)}</fieldset>
     </>}
     {job.tool === 'careflow_government_forms' && <>

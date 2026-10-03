@@ -100,7 +100,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         <motion.div
           key="nav"
           initial={false}
-          animate={{ width: isNavExpanded ? (ngoHome ? 280 : NAV_DIMENSIONS.NAV_WIDTH) : 0 }}
+          animate={{ width: isNavExpanded ? (ngoHome ? 240 : NAV_DIMENSIONS.NAV_WIDTH) : 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 40 }}
           style={{ height: '100%' }}
           className={cn("relative flex-shrink-0 overflow-hidden h-full", ngoHome ? "ngo-sidebar" : "p-2")}

@@ -138,11 +138,9 @@ export default function Hub({
     <div className={ngoHome ? "ngo-home" : "flex flex-col h-full min-h-0 items-center justify-center px-6 relative"}>
       <div className={ngoHome ? "ngo-home-content" : "w-full max-w-2xl"}>
         {ngoHome ? <>
-          <div className="ngo-home-heading"><div><p className="ngo-eyebrow">YOUR NGO ASSISTANT</p><h1>今天，要一起完成什麼？</h1><p>把文字、表格或圖片交給我。需要核對時，我會停下來等你。</p></div><LanguageSelector /></div>
-          <div className="ngo-examples" aria-label="試試這樣問">
-            {availableExamples().map(({ name, detail, prompt, icon: Icon }) => <button key={name} onClick={() => { setExample(prompt); inputRef.current?.focus(); }}>
-              <span className="ngo-example-icon"><Icon size={21} strokeWidth={1.7} /></span><strong>{name}</strong><span>{detail}</span>
-            </button>)}
+          <div className="ngo-home-heading">
+            <div><p className="ngo-eyebrow">日常工作 · 對話協作</p><h1>今天的工作，<br /><span>從這裡開始。</span></h1></div>
+            <div className="ngo-home-aside"><LanguageSelector /><p>說說你想完成的事。<br />整理、核對，然後交付。</p></div>
           </div>
           <FoundryStatus banner />
         </> : <><div className="mb-5 text-5xl">{time} {meridiem}</div><p>{greeting}</p></>}
@@ -168,6 +166,16 @@ export default function Hub({
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}
           />
         </ChatInputCard>
+        {ngoHome && <section className="ngo-tool-index" aria-label="試試這樣問">
+          <div className="ngo-index-heading"><h2>可以從這些開始</h2><span>選一句，接著聊</span></div>
+          <div className="ngo-examples">
+            {availableExamples().map(({ name, detail, prompt }, index) => <button key={name} onClick={() => { setExample(prompt); inputRef.current?.focus(); }}>
+              <span className="ngo-example-number">{String(index + 1).padStart(2, '0')}</span><strong>{name}</strong><span className="ngo-example-leader" aria-hidden="true" /><span className="ngo-example-detail">{detail}</span><span className="ngo-example-arrow" aria-hidden="true">↗</span>
+            </button>)}
+          </div>
+          <p className="ngo-index-note">重要內容，由你核對後再產生文件。</p>
+        </section>}
+
       </div>
 
       {isCreatingSession && (

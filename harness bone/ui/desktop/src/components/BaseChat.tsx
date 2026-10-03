@@ -368,7 +368,7 @@ export default function BaseChat({
 
   if (sessionLoadError) {
     return (
-      <div className="h-full flex flex-col min-h-0">
+      <div className="ngo-conversation h-full flex flex-col min-h-0">
         <MainPanelLayout
           backgroundColor={'bg-background-primary'}
           removeTopPadding={true}
@@ -401,7 +401,7 @@ export default function BaseChat({
   }
 
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className="ngo-conversation h-full flex flex-col min-h-0">
       <MainPanelLayout
         backgroundColor={'bg-background-primary'}
         removeTopPadding={true}
@@ -413,7 +413,7 @@ export default function BaseChat({
         {/* Chat container with sticky recipe header */}
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* NGOPilot wordmark - top right */}
-          <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-1">
+          <div className="ngo-runtime-wordmark absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-1">
             <div className="no-drag flex flex-row items-center gap-1">
               <Goose className="size-5 goose-icon-animation" />
               <span className="text-sm leading-none text-text-secondary -translate-y-px">
@@ -455,7 +455,7 @@ export default function BaseChat({
             {messages.length > 0 || recipe ? (
               <>
                 <SearchView>
-                  <ProgressiveMessageList
+                  <div className="ngo-conversation-messages"><ProgressiveMessageList
                     messages={messages}
                     chat={{ sessionId }}
                     toolCallNotifications={toolCallNotifications}
@@ -466,6 +466,7 @@ export default function BaseChat({
                     onMessageUpdate={onMessageUpdate}
                     submitElicitationResponse={submitElicitationResponse}
                   />
+                  </div>
                 </SearchView>
 
                 <div className="block h-8" />

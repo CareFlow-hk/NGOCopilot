@@ -1,4 +1,3 @@
-import { availableExamples } from '../ngo/WorkflowExamples';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, Trash2 } from 'lucide-react';
@@ -339,9 +338,6 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
         ))}
       </div>
 
-      {window.appConfig?.get('NGOPILOT_AGENT_HOME') && <div className="ngo-sidebar-tools"><p className="ngo-eyebrow">可以幫你做</p>{availableExamples().map(({ name, prompt, icon: Icon }) => <button key={name} onClick={() => {
-        sessionStorage.setItem('ngopilot.prefill', prompt); handleNavClick('/'); window.dispatchEvent(new Event('ngopilot:prefill'));
-      }}><Icon size={18} strokeWidth={1.7} />{name}</button>)}</div>}
       <div className="flex-1 min-h-0 flex flex-col mt-3">
         <button
           onClick={() => setIsChatsExpanded((v) => !v)}

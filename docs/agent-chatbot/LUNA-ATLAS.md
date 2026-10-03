@@ -2,7 +2,7 @@
 
 2026-10-03。本文件取代舊驗收紀錄中的模型及語音配置說明。
 
-> 更新：使用者填入 Key 後，已完成下方真實 Luna 驗收；前文空 Key 狀態保留作最初交付紀錄。
+> 更新：使用者填入 Key 後，已完成下方真實 Luna 驗收；前文空 Key 狀態保留作最初交付紀錄。UI 已再次依真正現行的 Atlas editorial 主題修正，見文末。
 
 ## 已完成
 
@@ -63,3 +63,13 @@ FOUNDRY_API_KEY=
 |scheduler|20261003_27|job_8ab3b32d0cd743f8ae145d39ac3d527a|34.4|scheduler-487840970d2d_a5c6c74b38ee40549112232ea6408755-aa8b7583.ics, scheduler-e8d5d52d1d02_a5c6c74b38ee40549112232ea6408755-6ae02eb3.csv|
 
 本次尚未以 Luna 重跑政府表格及人手排班全流程；不能將上述三條流程的成功延伸為全部功能的端到端驗證。
+
+## 介面更正：現行 Atlas editorial 主題
+
+先前參考主目錄的 styles.css/refinement.css 是錯誤的版本。正確來源是 `/Users/jiahangx/.codex/worktrees/atlas-photo-intake/Careflow-Atlas/src/theme-atlas.css`，由該工作樹 main.tsx 最後載入，註明 2026-09-29 選定的 B 方案。此輪只讀取 Atlas，沒有修改其檔案。
+
+Pilot 現在沿用其暖紙底 #f7f4ec、紙面 #fffdf8、墨色 #1d2622、陶紅 #7d3b27、線條 #ddd6c6；Noto Serif TC 標題及工具名稱，Inter 操作文字；52px 頂欄、240px 歷史側欄、2–3px 圓角。首頁以對話輸入為首，五工具改成編號與點線目錄，側欄移除重複工具入口。聊天訊息、核對卡片及設定對話框同步主題。
+
+[Opus 決策與落實](opus-editorial-decision.md)。本輪只修改前端樣式及排列，API Key、模型、工具流程與歷史資料均沿用既有配置。
+
+驗證：前端 TypeScript 和 production build 通過，既有 2 項前端測試通過。瀏覽器實測 1280px 桌面及 390px 窄屏，提示索引只填入而不發送；既有對話、核對表及附件仍可讀取。聊天正文和輸入框限制為 780px，避免整頁拉寬。僅熱更新靜態檔案並重建映像，沒有重啟使用中的 Agent。
