@@ -110,8 +110,8 @@ class Settings(BaseSettings):
     @classmethod
     def valid_environment(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in {"development", "test", "production"}:
-            raise ValueError("must be development, test, or production")
+        if normalized not in {"local", "development", "test", "production"}:
+            raise ValueError("must be local, development, test, or production")
         return normalized
 
     @field_validator("database_pool_max_size")

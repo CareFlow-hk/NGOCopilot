@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,7 +25,10 @@ class RegisteredTool:
 
 def load_tools() -> tuple[RegisteredTool, ...]:
     registered: list[RegisteredTool] = []
-    for name in TOOL_MODULES:
+    modules = TOOL_MODULES + (
+        ("activity_scheduler",) if os.getenv("NGOPILOT_SCHEDULER_URL") else ()
+    )
+    for name in modules:
         module = importlib.import_module(f"ngopilot_mcp.tools.{name}")
         manifest = getattr(module, "MANIFEST")
         controller = getattr(module, "CONTROLLER")

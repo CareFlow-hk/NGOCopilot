@@ -253,5 +253,15 @@ ToolRequest: TypeAlias = Annotated[
 REQUEST_ADAPTER = TypeAdapter(ToolRequest)
 
 
+def public_input_schema() -> dict[str, Any]:
+    from ngopilot_mcp.shared.public_schema import operation_schema
+
+    return operation_schema({
+        "start": StartInput, "status": EmptyInput, "review": ReviewInput,
+        "revalidate": RevalidateInput, "export": EmptyInput,
+        "publish": PublishInput, "get_published": GetPublishedInput,
+    })
+
+
 def validate_request(value: object) -> ToolRequest:
     return REQUEST_ADAPTER.validate_python(value, strict=True)

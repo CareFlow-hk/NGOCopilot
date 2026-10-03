@@ -21,4 +21,5 @@ MANIFEST = ToolManifest(
     worker="careflow",
     operations=("start", "status", "review", "export"),
     input_schema=public_input_schema(),
+    human_confirmation_operations=("review",),
 )

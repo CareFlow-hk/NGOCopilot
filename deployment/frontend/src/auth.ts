@@ -82,7 +82,7 @@ function renderAuthGate(root: HTMLElement): Promise<void> {
       <main class="auth-shell">
         <section class="auth-panel" aria-labelledby="auth-title">
           <div class="auth-brand">NGOPilot</div>
-          <h1 id="auth-title">登入文件工作台</h1>
+          <h1 id="auth-title">登入 NGOPilot</h1>
           <p class="auth-intro">工作記錄與產生的檔案會保存在你的帳戶。</p>
           <div class="auth-modes" role="tablist" aria-label="帳戶操作">
             <button type="button" class="is-active" role="tab" aria-selected="true" data-mode="login">登入</button>
@@ -128,7 +128,7 @@ function renderAuthGate(root: HTMLElement): Promise<void> {
         nameField.hidden = !registering;
         nameInput.required = registering;
         passwordInput.autocomplete = registering ? "new-password" : "current-password";
-        title.textContent = registering ? "建立你的帳戶" : "登入文件工作台";
+        title.textContent = registering ? "建立你的帳戶" : "登入 NGOPilot";
         submit.textContent = registering ? "建立帳戶" : "登入";
         error.hidden = true;
       });

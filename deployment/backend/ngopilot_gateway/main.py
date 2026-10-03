@@ -135,6 +135,18 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
     app.include_router(auth_router)
+    from .workflow_routes import register_workflow_routes
+
+    async def workflow_owner(auth: AuthContext = Depends(require_auth)) -> UUID:
+        return auth.user_id
+
+    register_workflow_routes(app, app_settings, workflow_owner)
+
+    @app.get("/api/runtime")
+    async def runtime_config():
+        return {"GOOSE_DEFAULT_PROVIDER": app_settings.goose_provider,
+                "GOOSE_DEFAULT_MODEL": app_settings.goose_model,
+                "NGOPILOT_AGENT_HOME": True}
 
     @app.middleware("http")
     async def response_headers(request: Request, call_next):

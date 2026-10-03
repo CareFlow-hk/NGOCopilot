@@ -40,6 +40,17 @@ from .validation import (
 
 
 class GovernmentFormsController:
+    @staticmethod
+    def presentation_warnings(result: dict) -> list[str]:
+        if result.get("template_id") == "joyyou" and any(
+            field.get("key", "").startswith("dob_")
+            for field in result.get("preview", {}).get("mappings", [])
+        ):
+            return [
+                "這是舊版模板的歷史驗收結果：舊映射曾把出生日期放到簽署日期。請新建任務使用已修正的模板，不要使用此舊文件。"
+            ]
+        return []
+
     async def execute(self, call: ToolCall, runtime: ToolRuntime) -> ToolExecution:
         request = _validated_request(call)
         if isinstance(request, ListTemplatesCall):

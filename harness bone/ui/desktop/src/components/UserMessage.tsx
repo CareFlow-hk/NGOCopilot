@@ -13,6 +13,7 @@ import Close from './icons/Close';
 import Edit from './icons/Edit';
 import { Button } from './ui/button';
 import { defineMessages, useIntl } from '../i18n';
+import { NGO_TOOLS } from './ngo/WorkflowTaskCard';
 
 const i18n = defineMessages({
   editPlaceholder: {
@@ -105,6 +106,24 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
   const [error, setError] = useState<string | null>(null);
 
   const { textContent, imagePaths } = getTextAndImageContent(message);
+  const displayText = (() => {
+    if (!window.appConfig?.get('NGOPILOT_AGENT_HOME')) return textContent;
+    if (!textContent.startsWith('我已在任務卡核對並按下確認。')) {
+      // Keep exact attachment paths in the model context, display filenames only.
+      return textContent.replace(/Attachments:\s*(\[[^\n]+\])/g, (original, encoded) => {
+        try {
+          const paths: unknown = JSON.parse(encoded);
+          if (Array.isArray(paths) && paths.every((path) => typeof path === 'string')) return `附件：${paths.map((path) => decodeURIComponent(path.split('/').pop() || path)).join('、')}`;
+        } catch { /* Preserve unrecognised user text. */ }
+        return original;
+      });
+    }
+    try {
+      const confirmation = JSON.parse(textContent.slice(textContent.indexOf('\n') + 1));
+      if (NGO_TOOLS[confirmation.tool] && confirmation.job_id && confirmation.input) return confirmation.operation === 'burn' ? '我已確認銷毀此任務的轉寫原件。' : confirmation.operation === 'publish' ? '我已確認發佈目前排班版本。' : `我已確認「${NGO_TOOLS[confirmation.tool]}」的內容，請繼續產生文件。`;
+    } catch { /* Show ordinary user text unchanged. */ }
+    return textContent;
+  })();
   const timestamp = formatMessageTimestamp(message.created);
 
   const messageImages: ImageData[] = imageDataFromMessage(message);
@@ -326,7 +345,7 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
                   <div className="user-message-bubble flex bg-text-primary text-background-primary rounded-xl py-2.5 px-4">
                     <div ref={contentRef}>
                       <MarkdownContent
-                        content={textContent}
+                        content={displayText}
                         className="!text-inherit prose-a:!text-inherit prose-headings:!text-inherit prose-strong:!text-inherit prose-em:!text-inherit prose-li:!text-inherit prose-p:!text-inherit user-message"
                       />
                     </div>

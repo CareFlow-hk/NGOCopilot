@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
-WorkerName = Literal["careflow", "rostercopiilot"]
+WorkerName = Literal["careflow", "rostercopiilot", "scheduler"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +16,7 @@ class ToolManifest:
     worker: WorkerName
     operations: tuple[str, ...]
     input_schema: dict[str, Any] | None = None
+    human_confirmation_operations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

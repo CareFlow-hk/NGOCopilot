@@ -48,6 +48,7 @@ const appConfig: Record<string, unknown> = {
   GOOSE_DISABLE_NOSTR_SHARING: true,
   GOOSE_VERSION: "1.45.0",
   NGOPILOT_CLOUD: true,
+  NGOPILOT_API_URL: import.meta.env.VITE_API_URL || "",
 };
 
 function platform(): string {
@@ -137,7 +138,10 @@ function uploadFile(file: File): string {
   return placeholder;
 }
 
-export function installBrowserShim(): void {
+export function installBrowserShim(runtime: Record<string, unknown> = {}): void {
+  for (const key of ["GOOSE_DEFAULT_PROVIDER", "GOOSE_DEFAULT_MODEL", "GOOSE_WORKING_DIR", "NGOPILOT_LOCAL", "NGOPILOT_AGENT_HOME", "NGOPILOT_SCHEDULER_ENABLED"]) {
+    if (key in runtime) appConfig[key] = runtime[key];
+  }
   const listeners = new Map<string, Set<Listener>>();
   const on = (channel: string, listener: Listener) => {
     const channelListeners = listeners.get(channel) ?? new Set<Listener>();

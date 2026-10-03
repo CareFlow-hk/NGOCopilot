@@ -111,6 +111,7 @@ function StatRow({
  */
 export default function MessageUsageStats({ usage }: { usage: MessageUsage }) {
   const intl = useIntl();
+  if (window.appConfig?.get('NGOPILOT_AGENT_HOME')) return null;
   const {
     inputTokens,
     outputTokens,

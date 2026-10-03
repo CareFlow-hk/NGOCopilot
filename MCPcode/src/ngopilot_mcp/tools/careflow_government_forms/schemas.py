@@ -144,6 +144,20 @@ ToolRequest: TypeAlias = Annotated[
 REQUEST_ADAPTER = TypeAdapter(ToolRequest)
 
 
+def public_input_schema() -> dict[str, Any]:
+    from ngopilot_mcp.shared.public_schema import operation_schema
+
+    return operation_schema(
+        {
+            "list_templates": EmptyInput,
+            "start": StartInput,
+            "status": EmptyInput,
+            "review": ReviewInput,
+            "export": EmptyInput,
+        }
+    )
+
+
 def validate_request(value: object) -> ToolRequest:
     """Validate an untrusted MCP call without coercing scalar types."""
 

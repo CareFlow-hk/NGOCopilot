@@ -2,6 +2,8 @@
 
 from ngopilot_mcp.shared.tool_api import ToolManifest
 
+from .schemas import public_input_schema
+
 MANIFEST = ToolManifest(
     name="roster_copilot",
     description=(
@@ -20,4 +22,6 @@ MANIFEST = ToolManifest(
         "publish",
         "get_published",
     ),
+    input_schema=public_input_schema(),
+    human_confirmation_operations=("review", "export", "publish"),
 )

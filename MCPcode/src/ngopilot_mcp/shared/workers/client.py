@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,12 @@ class WorkerClient:
             app_data = self.settings.careflow_data
             resources = self.settings.resources_root / "careflow"
             module = "ngopilot_mcp.workers.careflow_worker"
+        elif worker == "scheduler":
+            python = Path(sys.executable)
+            source = Path(__file__).resolve().parents[2]
+            app_data = self.settings.state_root / "app-data" / "scheduler"
+            resources = self.settings.resources_root / "scheduler"
+            module = "ngopilot_mcp.workers.scheduler_worker"
         else:
             python = self.settings.roster_python
             source = self.settings.roster_source
@@ -84,6 +91,14 @@ class WorkerClient:
         package_src = str(Path(__file__).resolve().parents[3])
         env.pop("PYTHONPATH", None)
         env.pop("PYTHONHOME", None)
+        # Native algorithm workers keep their isolated dependency precedence.
+        # The host-only HTTP worker uses the current overlaid MCP package, not
+        # an older copy installed in the base image's site-packages.
+        launcher = _WORKER_LAUNCHER
+        if module == "ngopilot_mcp.workers.scheduler_worker":
+            launcher = launcher.replace(
+                "sys.path.append(sys.argv[1])", "sys.path.insert(0, sys.argv[1])"
+            )
         try:
             completed = subprocess.run(
                 [
@@ -91,7 +106,7 @@ class WorkerClient:
                     "-I",
                     "-B",
                     "-c",
-                    _WORKER_LAUNCHER,
+                    launcher,
                     package_src,
                     module,
                 ],
@@ -110,7 +125,9 @@ class WorkerClient:
             ) from exc
 
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text(redact_text(completed.stderr)[-1_000_000:], encoding="utf-8")
+        log_path.write_text(
+            redact_text(completed.stderr)[-1_000_000:], encoding="utf-8"
+        )
         try:
             response = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:

@@ -1,0 +1,206 @@
+{
+  "date": "2026-10-03",
+  "scope": "Local original Agent; authored synthetic fixtures; real configured providers; no adoption claim",
+  "unit_tests": {
+    "passed": 233,
+    "skipped": 1,
+    "skip_reason": "PostgreSQL integration not configured"
+  },
+  "algorithm_dependency_files": {
+    "unchanged": 316,
+    "added": 0
+  },
+  "meeting": {
+    "case": "meeting",
+    "session_id": "20261003_3",
+    "job_id": "job_86ab83a446764286a260ecff377211f0",
+    "state": "exported",
+    "artifacts": [
+      {
+        "filename": "meeting-3e7859e96dd0_visit_note_1_20261003_085955.docx",
+        "sha256": "e5c0ec8b7a443e25489e8ee13bfb3725aa001e0a808cbde2011fc7fdd205c1e9",
+        "bytes": 38322
+      }
+    ],
+    "elapsed_seconds": 33.3
+  },
+  "roster": {
+    "case": "roster",
+    "session_id": "20261003_5",
+    "job_id": "job_bafa022679e7474fbc7a9c683ccd9715",
+    "state": "ready",
+    "artifacts": [
+      {
+        "filename": "roster-897527897d04_照顧員工作分工表_審核草稿.xlsx",
+        "sha256": "043d435b803c484f9780a54b0c7e369f45b3831b3d54cfb08d3d5d7c107d65ef",
+        "bytes": 14490
+      }
+    ],
+    "elapsed_seconds": 19.7
+  },
+  "scheduler": {
+    "case": "scheduler",
+    "session_id": "20261003_16",
+    "job_id": "job_7cbece309e4f4175b19d50f097f738fd",
+    "state": "exported",
+    "artifacts": [
+      {
+        "filename": "scheduler-c7a47cf4cd48_a5dfbde3976f455c943465144bcfe528-cdfe822e.ics",
+        "sha256": "d238394f3f79636d0c76b7e5b752abebea1f3c609e7636896e48494cb0769e5e",
+        "bytes": 774
+      },
+      {
+        "filename": "scheduler-1bd796bb6ddf_a5dfbde3976f455c943465144bcfe528-fc639383.csv",
+        "sha256": "059494736225a81813e9659f5ab47189f33556f2ac8261520b5ad3400b7b4c1d",
+        "bytes": 189
+      }
+    ],
+    "elapsed_seconds": 20.2
+  },
+  "government": {
+    "case": "government",
+    "session_id": "20261003_21",
+    "job_id": "job_6a3f3d7e29a9485f9e9bb34a1ecd78eb",
+    "state": "exported",
+    "artifacts": [
+      {
+        "filename": "government-44dbd09e671f_anon_joyyou_20261003_095616.pdf",
+        "sha256": "0b412a36e0d999f75af69b3feddc68a6fe4dc8da51b391e3adfd00ca60abc37b",
+        "bytes": 1471355
+      }
+    ],
+    "elapsed_seconds": 31.9,
+    "signature_date_blank_verified": true
+  },
+  "azure_backup": {
+    "case": "government",
+    "session_id": "20261003_4",
+    "job_id": "job_00e11e4ceddd4ac4b0457def254d155f",
+    "state": "exported",
+    "artifacts": [
+      {
+        "filename": "government-76b6e488fd56_anon_joyyou_20261003_094927.pdf",
+        "sha256": "a8c7d81341324d93d08e8418d4cf92d5d138d8c92b69a46a52e49196836ed0db",
+        "bytes": 1471355
+      }
+    ],
+    "elapsed_seconds": 69.9,
+    "signature_date_blank_verified": true
+  },
+  "paper": {
+    "job_id": "job_568f232716e9451b95a7e38842eb490f",
+    "state": "exported",
+    "browser_upload_review_download": true,
+    "actual_vision_provider": "azure_openai",
+    "actual_vision_model": "gpt-5.1"
+  },
+  "scheduler_browser": {
+    "session_id": "20261003_17",
+    "job_id": "job_e5ac8ff5117c48d2b06d7697d1727045",
+    "source_id": "a5dfbde3976f455c943465144bcfe528",
+    "human_button_export_verified": true
+  },
+  "routing": [
+    {
+      "case": "paper",
+      "session_id": "20261003_7",
+      "job_id": "job_442db28b54eb4108adc6b5da01628ba1",
+      "state": "pending_review",
+      "tool": "careflow_paper_forms_to_excel",
+      "calls": [
+        "ngopilot: careflow paper forms to excel"
+      ]
+    },
+    {
+      "case": "paper",
+      "session_id": "20261003_8",
+      "job_id": "job_64e4bce9760b4e9aa25d7232d4ab0887",
+      "state": "pending_review",
+      "tool": "careflow_paper_forms_to_excel",
+      "calls": [
+        "ngopilot: careflow paper forms to excel"
+      ]
+    },
+    {
+      "case": "meeting",
+      "session_id": "20261003_9",
+      "job_id": "job_286c05cf26bb4159aa7a06da6513b7e1",
+      "state": "pending_review",
+      "tool": "careflow_meeting_notes",
+      "calls": [
+        "ngopilot: careflow meeting notes"
+      ]
+    },
+    {
+      "case": "meeting",
+      "session_id": "20261003_10",
+      "job_id": "job_1e647aff59424941b710eacd549be234",
+      "state": "pending_review",
+      "tool": "careflow_meeting_notes",
+      "calls": [
+        "ngopilot: careflow meeting notes"
+      ]
+    },
+    {
+      "case": "government",
+      "session_id": "20261003_11",
+      "job_id": "job_02cf3e8d03c047fd91675e96ed51000d",
+      "state": "pending_review",
+      "tool": "careflow_government_forms",
+      "calls": [
+        "ngopilot: careflow government forms",
+        "ngopilot: careflow government forms"
+      ]
+    },
+    {
+      "case": "government",
+      "session_id": "20261003_12",
+      "job_id": "job_d66014f3748849819846ca61d5168222",
+      "state": "pending_review",
+      "tool": "careflow_government_forms",
+      "calls": [
+        "ngopilot: careflow government forms",
+        "ngopilot: careflow government forms"
+      ]
+    },
+    {
+      "case": "roster",
+      "session_id": "20261003_13",
+      "job_id": "job_f42a0fdd0ac3428c99855224751f70d3",
+      "state": "ready",
+      "tool": "roster_copilot",
+      "calls": [
+        "ngopilot: roster copilot"
+      ]
+    },
+    {
+      "case": "roster",
+      "session_id": "20261003_14",
+      "job_id": "job_ee15f4b99b064d85aeaa3ea33c4e3196",
+      "state": "ready",
+      "tool": "roster_copilot",
+      "calls": [
+        "ngopilot: roster copilot"
+      ]
+    }
+  ],
+  "routing_summary": {
+    "old_tools": 4,
+    "phrases_per_tool": 3,
+    "correct": 12,
+    "ambiguous_prompt": "幫我安排一下下星期。",
+    "ambiguous_clarified_without_tool": true,
+    "method": "One full acceptance prompt plus two additional phrases per tool. Routing evidence does not imply all extracted content was correct before subsequent fixes."
+  },
+  "recovery": {
+    "empty_elder_id_export": "Failed reviewed jobs recovered after adapter fix without fabricated files",
+    "database": "Eight stopped databases passed integrity_check; checkpoint and restart preserved tasks and downloads",
+    "legacy_joyyou_jobs": "Historical jobs retain their files and now show a warning. Their obsolete DOB/signature mapping is not final acceptance evidence."
+  },
+  "limits": [
+    "Apple/Google calendar import not performed; real ICS parsed with icalendar and two dates/times/UIDs verified",
+    "No public deployment or multi-organization acceptance",
+    "Roster uses explicitly labelled synthetic staff and cases",
+    "Azure fallback government flow verified; not every tool repeated on both Agent providers"
+  ]
+}

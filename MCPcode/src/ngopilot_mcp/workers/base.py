@@ -67,10 +67,12 @@ def _configure_application(worker_name: str, request: dict[str, Any]) -> None:
         os.environ["DATA_DIR"] = str(app_data)
         os.environ["DATABASE_URL"] = f"sqlite:///{app_data / 'careflow.db'}"
         os.environ.setdefault("ASSET_DIR", str(app_data / "assets"))
-    else:
+    elif worker_name == "rostercopiilot":
         import_root = source / "backend"
         os.environ["ROSTER_DB_PATH"] = str(app_data / "roster.db")
         os.environ["ROSTER_EXPORT_DIR"] = str(app_data / "exports")
+    else:
+        import_root = source
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
     # Native services may create relative logs or temporary files. Keep those

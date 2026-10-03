@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import shutil
 from datetime import date
 from pathlib import Path
@@ -25,6 +26,40 @@ def _bindings() -> SimpleNamespace:
     from app.services.weekly_publication import WeeklyPublicationCommand
     from app.services.weekly_review import WeeklyRevalidateCommand, WeeklyReviewCommand
     from starlette.datastructures import UploadFile
+
+    # Operator-owned base data is an adapter setting, never a patch to the
+    # replaceable algorithm checkout. The packaged default remains available.
+    configured_template = os.getenv("NGOPILOT_ROSTER_DIVISION_TEMPLATE")
+    if configured_template:
+        template = Path(configured_template).resolve(strict=True)
+        if template.suffix.lower() != ".xlsx":
+            raise ValueError(
+                "The configured division template must be an XLSX workbook"
+            )
+        demo.DEFAULT_DIVISION_TEMPLATE = template
+        native_summary = demo._source_summary
+
+        def source_summary(run):
+            result = native_summary(run)
+            result["固定基礎"] = template.name
+            return result
+
+        demo._source_summary = source_summary
+    configured_master = os.getenv("NGOPILOT_ROSTER_MASTER_DATA")
+    if configured_master:
+        from app.domain import MasterDataSet, validate_master_data
+
+        store = demo.get_state().store
+        if store is not None and store.get_master_data() is None:
+            master = MasterDataSet.model_validate_json(
+                Path(configured_master).read_text(encoding="utf-8")
+            )
+            issues = validate_master_data(master)
+            if any(issue.level == "error" for issue in issues):
+                raise ValueError(
+                    "Configured roster master data contains validation errors"
+                )
+            store.save_master_data(master, origin=master.origin, issues=issues)
 
     return SimpleNamespace(
         demo=demo,
@@ -252,6 +287,8 @@ def _envelope(
             "NATIVE_PROTOCOL_ERROR",
             "RosterCopiilot returned a non-object result.",
         )
+    if os.getenv("NGOPILOT_ROSTER_DATA_LABEL"):
+        result["base_data_label"] = os.environ["NGOPILOT_ROSTER_DATA_LABEL"]
     run_id = result.get("run_id")
     if not isinstance(run_id, str) or not run_id:
         raise ToolError(

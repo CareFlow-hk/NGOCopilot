@@ -1,0 +1,16 @@
+**
+!MCPcode/
+!MCPcode/src/
+!MCPcode/src/ngopilot_mcp/
+!MCPcode/src/ngopilot_mcp/**
+!deployment/
+!deployment/backend/
+!deployment/backend/ngopilot_gateway/
+!deployment/backend/ngopilot_gateway/**
+!deployment/frontend/
+!deployment/frontend/dist/
+!deployment/frontend/dist/**
+!deployment/agent-samples/
+!deployment/agent-samples/**
+**/__pycache__/
+**/*.pyc

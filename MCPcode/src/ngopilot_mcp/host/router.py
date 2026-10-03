@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections import defaultdict
 from typing import Any
 
 from pydantic import ValidationError
 
 from ..shared.errors import ToolError
+from ..shared.human_confirmation import HumanConfirmations
 from ..shared.runtime import Runtime
 from ..shared.tool_api import ToolCall, ToolExecution
 from .registry import RegisteredTool
@@ -50,6 +52,18 @@ class Router:
         lock_key = job_id or f"{tool_name}:{request_id or 'new'}"
         async with self._locks[lock_key]:
             try:
+                if (
+                    os.getenv("NGOPILOT_MCP_REQUIRE_HUMAN_CONFIRMATION") == "true"
+                    and operation in registered.manifest.human_confirmation_operations
+                ):
+                    job = self.runtime.get_job(tool_name=tool_name, job_id=job_id or "")
+                    HumanConfirmations(self.runtime.settings.state_root).require(
+                        tool=tool_name,
+                        job_id=job.job_id,
+                        operation=operation,
+                        payload=call.input,
+                        revision=job.result,
+                    )
                 execution = await registered.controller.execute(call, self.runtime)
                 if not isinstance(execution, ToolExecution):
                     raise TypeError(

@@ -717,7 +717,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
               </div>
               <div className="flex items-center text-text-secondary text-xs">
                 <Folder className="w-3 h-3 mr-1 flex-shrink-0" />
-                <span className="truncate">{session.workingDir}</span>
+                <span className="truncate">{window.appConfig?.get('NGOPILOT_AGENT_HOME') ? 'NGOPilot 工作記錄' : session.workingDir}</span>
               </div>
             </div>
           </div>
@@ -1097,7 +1097,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(
         <ConfirmationModal
           isOpen={showDeleteConfirmation}
           title={intl.formatMessage(i18n.deleteTitle)}
-          message={intl.formatMessage(i18n.deleteMessage, { name: sessionToDelete?.name ?? '' })}
+          message={window.appConfig?.get('NGOPILOT_LOCAL') ? `刪除對話「${sessionToDelete?.name ?? ''}」？工作資料及已產生文件會保留在本機資料目錄。` : intl.formatMessage(i18n.deleteMessage, { name: sessionToDelete?.name ?? '' })}
           confirmLabel={intl.formatMessage(i18n.deleteTitle)}
           cancelLabel={intl.formatMessage(i18n.cancel)}
           confirmVariant="destructive"

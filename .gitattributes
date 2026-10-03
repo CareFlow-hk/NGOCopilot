@@ -1,0 +1,2 @@
+# PDF byte offsets and xref whitespace must be preserved exactly.
+deployment/agent-samples/*.pdf binary

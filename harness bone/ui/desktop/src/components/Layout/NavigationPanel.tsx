@@ -208,6 +208,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
 
   const visibleItems = useMemo<NavItem[]>(() => {
     return NAV_ITEMS.filter((item) => {
+      if (window.appConfig?.get('NGOPILOT_AGENT_HOME')) return ['home', 'sessions'].includes(item.id);
       if (item.path === '/apps') return appsExtensionEnabled;
       return true;
     });
@@ -412,6 +413,10 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
       </div>
 
       <div className="px-2 pt-2 pb-2 border-t border-border-secondary">
+        {window.appConfig?.get('NGOPILOT_AGENT_HOME') && <details className="mb-2 text-sm">
+          <summary className="cursor-pointer px-3 py-2 text-text-secondary">進階工具</summary>
+          {NAV_ITEMS.filter((item) => !['home', 'sessions', 'scheduler', 'apps'].includes(item.id)).map((item) => <NavRow key={item.id} item={item} active={isActive(item.path)} onClick={() => handleNavClick(item.path)} />)}
+        </details>}
         <NavRow
           item={SETTINGS_NAV_ITEM}
           active={isActive(SETTINGS_NAV_ITEM.path)}

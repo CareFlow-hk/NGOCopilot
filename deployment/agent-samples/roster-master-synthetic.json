@@ -1,0 +1,540 @@
+{
+  "schema_version": "phase1a",
+  "origin": "synthetic_demo_authored_2026-10-03",
+  "workers": [
+    {
+      "id": "W001",
+      "display_name": "測試甲",
+      "aliases": [],
+      "gender": "F",
+      "home_team": "EH",
+      "skill_facts": [
+        {
+          "service_code": "E+RO",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "HC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "PC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "B",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "ESC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "AMC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "MRC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "GC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "KITCHEN",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        }
+      ],
+      "route_facts": [],
+      "saturday_team": "A",
+      "employment_type": "full",
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "work_start": "08:30:00",
+      "work_end": "17:30:00",
+      "notes": "Synthetic fixture; no real employee."
+    },
+    {
+      "id": "W002",
+      "display_name": "測試乙",
+      "aliases": [],
+      "gender": "F",
+      "home_team": "EH",
+      "skill_facts": [
+        {
+          "service_code": "E+RO",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "HC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "PC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "B",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "ESC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "AMC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "MRC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "GC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "KITCHEN",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        }
+      ],
+      "route_facts": [],
+      "saturday_team": "B",
+      "employment_type": "full",
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "work_start": "08:30:00",
+      "work_end": "17:30:00",
+      "notes": "Synthetic fixture; no real employee."
+    },
+    {
+      "id": "W003",
+      "display_name": "測試丙",
+      "aliases": [],
+      "gender": "F",
+      "home_team": "EH",
+      "skill_facts": [
+        {
+          "service_code": "E+RO",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "HC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "PC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "B",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "ESC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "AMC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "MRC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "GC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "KITCHEN",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        }
+      ],
+      "route_facts": [],
+      "saturday_team": "A",
+      "employment_type": "full",
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "work_start": "08:30:00",
+      "work_end": "17:30:00",
+      "notes": "Synthetic fixture; no real employee."
+    },
+    {
+      "id": "W004",
+      "display_name": "測試丁",
+      "aliases": [],
+      "gender": "F",
+      "home_team": "EH",
+      "skill_facts": [
+        {
+          "service_code": "E+RO",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "HC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "PC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "B",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "ESC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "AMC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "MRC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "GC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "KITCHEN",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        }
+      ],
+      "route_facts": [],
+      "saturday_team": "B",
+      "employment_type": "full",
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "work_start": "08:30:00",
+      "work_end": "17:30:00",
+      "notes": "Synthetic fixture; no real employee."
+    },
+    {
+      "id": "W005",
+      "display_name": "測試戊",
+      "aliases": [],
+      "gender": "F",
+      "home_team": "EH",
+      "skill_facts": [
+        {
+          "service_code": "E+RO",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "HC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "PC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "B",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "ESC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "AMC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "MRC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "GC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "KITCHEN",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        }
+      ],
+      "route_facts": [],
+      "saturday_team": "A",
+      "employment_type": "full",
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "work_start": "08:30:00",
+      "work_end": "17:30:00",
+      "notes": "Synthetic fixture; no real employee."
+    },
+    {
+      "id": "W006",
+      "display_name": "測試己",
+      "aliases": [],
+      "gender": "F",
+      "home_team": "EH",
+      "skill_facts": [
+        {
+          "service_code": "E+RO",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "HC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "PC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "B",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "ESC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "AMC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "MRC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "GC",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        },
+        {
+          "service_code": "KITCHEN",
+          "level": "qualified",
+          "source": "manual",
+          "evidence": "Authored qualification in synthetic demonstration fixture, not an NGO confirmation."
+        }
+      ],
+      "route_facts": [],
+      "saturday_team": "B",
+      "employment_type": "full",
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "work_start": "08:30:00",
+      "work_end": "17:30:00",
+      "notes": "Synthetic fixture; no real employee."
+    }
+  ],
+  "elders": [
+    {
+      "id": "E0001",
+      "display_name": "測試長者甲",
+      "aliases": [],
+      "gender": "F",
+      "gender_requirement": "ANY",
+      "district": "測試區",
+      "owning_unit": "EH",
+      "exclusive_worker_id": null,
+      "status": "active",
+      "notes": "Template bootstrap elder alias; gender pending NGO confirmation."
+    },
+    {
+      "id": "synthetic-elder-b",
+      "display_name": "測試長者乙",
+      "aliases": [
+        "測試長者乙"
+      ],
+      "gender": "F",
+      "gender_requirement": "ANY",
+      "district": "測試區",
+      "owning_unit": "EH",
+      "exclusive_worker_id": null,
+      "status": "active",
+      "notes": "Synthetic fixture."
+    }
+  ],
+  "fixed_services": [
+    {
+      "id": "FS0001",
+      "elder_id": "E0001",
+      "service_code": "HC",
+      "weekday": 1,
+      "period": "AM",
+      "session_index": 1,
+      "start_time": "09:00:00",
+      "end_time": "10:00:00",
+      "week_pattern": {
+        "kind": "weekly",
+        "weeks": [],
+        "raw": "weekly"
+      },
+      "assigned_worker_id": "W001",
+      "is_exclusive": false,
+      "alternate_group": null,
+      "district": null,
+      "route": null,
+      "center": null,
+      "active": true,
+      "effective_from": null,
+      "effective_to": null,
+      "source_ref": "恆常服務!C3",
+      "source_confidence": "high",
+      "notes": null
+    }
+  ],
+  "availability": [],
+  "leave_events": [],
+  "temporary_changes": [],
+  "rule_config": {
+    "version": "phase1a-default",
+    "scheduler_config": {
+      "version": "phase1-default",
+      "sessions": [],
+      "service_priority_order": [],
+      "service_code_priority_order": [],
+      "escort_occupancy": {
+        "occupies_full_half_day": true,
+        "max_requests_per_worker_per_half_day": 1,
+        "baseline_reserved_workers_per_half_day": 4,
+        "assumption": null
+      },
+      "centre_duty_placeholders": [],
+      "unknown_data_policy": {
+        "unknown_gender": "ineligible_and_data_gap",
+        "unknown_skill": "ineligible_and_data_gap",
+        "unknown_route": "manual_review_required",
+        "unknown_week_pattern": "manual_review_required",
+        "note": "Unknown eligibility facts must be surfaced for review."
+      },
+      "assumptions": []
+    },
+    "values": {
+      "saturday_anchor": {
+        "value": "odd_iso_week_team_A",
+        "confirmed": true,
+        "assumption": "Explicit rule of this synthetic fixture only."
+      },
+      "week_of_month_definition": {
+        "value": "kth_weekday_occurrence",
+        "confirmed": true,
+        "assumption": "Explicit rule of this synthetic fixture only."
+      },
+      "duty_requirements": {
+        "value": "counted_from_division_template",
+        "confirmed": true,
+        "assumption": "Explicit rule of this synthetic fixture only."
+      }
+    }
+  },
+  "manual_overrides": []
+}

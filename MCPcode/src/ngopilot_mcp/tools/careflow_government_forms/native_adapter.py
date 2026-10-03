@@ -53,6 +53,17 @@ def _dependencies() -> dict[str, Any]:
     )
     from app.services.welfare_form_templates import load_template
 
+    from .provider_adapter import bind_extraction_clients
+    from .template_adapter import corrected_template
+
+    bind_extraction_clients(welfare_form_extractor)
+    native_loader = load_template
+
+    def load_template(template_id):
+        return corrected_template(native_loader(template_id))
+
+    welfare_form_filler.load_template = load_template
+
     return {
         "fitz": fitz,
         "settings": settings,
@@ -225,6 +236,9 @@ def _start(
     )
     if not isinstance(preview, dict):
         raise ValueError("CareFlow mapper returned a non-object preview")
+    from .template_adapter import require_manual_signature_date
+
+    require_manual_signature_date(template_id, preview)
 
     return {
         "native_status": "pending_review",
@@ -259,11 +273,17 @@ def _export(
         for key, value in field_values.items()
     ):
         raise ValueError("field_values must be an object of strings")
-    _require_safe_native_elder_id(elder_profile.get("elder_id"))
+    # An omitted case identifier is legitimate. Empty LLM values mean absent,
+    # not an instruction to name a file with an unsafe identifier. Preserve the
+    # reviewed profile and use the native filler's existing anonymous fallback.
+    output_profile = deepcopy(elder_profile)
+    if output_profile.get("elder_id") in (None, ""):
+        output_profile.pop("elder_id", None)
+    _require_safe_native_elder_id(output_profile.get("elder_id"))
 
     native_result = dependencies["filler"].fill_form(
         template_id,
-        elder_profile=deepcopy(elder_profile),
+        elder_profile=output_profile,
         field_values=deepcopy(field_values),
     )
     if not isinstance(native_result, dict):

@@ -80,6 +80,10 @@ const NAV_ITEM_MESSAGES: Record<string, MessageDescriptor> = navItemMessages;
 
 /** Format a NavItem's label using the provided intl instance, falling back to `item.label`. */
 export function getNavItemLabel(item: NavItem, intl: IntlShape): string {
+  if (window.appConfig?.get('NGOPILOT_AGENT_HOME') && window.appConfig?.get('GOOSE_LOCALE') !== 'en') {
+    const labels: Record<string, string> = { home: '新對話', sessions: '歷史對話', settings: '設定', recipes: '工作指引', skills: '技能', extensions: '工具連接' };
+    if (labels[item.id]) return labels[item.id];
+  }
   const descriptor = NAV_ITEM_MESSAGES[item.id];
   return descriptor ? intl.formatMessage(descriptor) : item.label;
 }

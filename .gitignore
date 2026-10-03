@@ -14,3 +14,4 @@
 # Local human-reviewed workbench runtime
 .local-workbench/
 .venv-workbench/
+.local-agent/

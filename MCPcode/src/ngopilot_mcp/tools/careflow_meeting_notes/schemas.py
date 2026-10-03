@@ -91,6 +91,15 @@ MeetingNotesRequest: TypeAlias = Annotated[
 REQUEST_ADAPTER = TypeAdapter(MeetingNotesRequest)
 
 
+def public_input_schema() -> dict[str, Any]:
+    from ngopilot_mcp.shared.public_schema import operation_schema
+
+    return operation_schema({
+        "start": StartInput, "status": EmptyInput, "review": ReviewInput,
+        "export": EmptyInput, "burn": EmptyInput,
+    })
+
+
 def parse_request(value: object) -> MeetingNotesRequest:
     """Validate an untrusted MCP request without coercing scalar types."""
 

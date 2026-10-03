@@ -36,7 +36,7 @@ where = ["."]
 include = ["ngopilot_gateway*"]
 
 [tool.setuptools.package-data]
-ngopilot_gateway = ["migrations/*.sql"]
+ngopilot_gateway = ["migrations/*.sql", "agent_instructions.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

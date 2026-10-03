@@ -75,7 +75,7 @@ worker assignments, and routing descriptions.
 
 | Tool | Send these inputs | Operations | Delivered output |
 |---|---|---|---|
-| `careflow_paper_forms_to_excel` | One or more completed volunteer-form scans as `.jpg`, `.jpeg`, or `.png` in `image_paths` | `start`, `status`, `export` | Automatically approved `.xlsx` workbook |
+| `careflow_paper_forms_to_excel` | One or more completed volunteer-form scans as `.jpg`, `.jpeg`, or `.png` in `image_paths` | `start`, `status`, `review`, `export` | Human-reviewed `.xlsx` workbook |
 | `careflow_meeting_notes` | One recording in `audio_path` (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.ogg`) and one report template in `template_path` (`.docx`, or capability-gated `.doc`) | `start`, `status`, `review`, `export`, `burn` | Reviewed `.docx` note |
 | `careflow_government_forms` | Exactly one text, structured elder profile, or elder-source image (`.jpg`, `.jpeg`, `.png`; capability-gated `.heic`/`.heif`) plus a listed `template_id` | `list_templates`, `start`, `status`, `review`, `export` | Filled `.pdf` form |
 | `roster_copilot` | Named `hc_workbook_path` and `escort_workbook_path` inputs, each `.xlsx` or `.xlsm`, plus `week_start` | `start`, `status`, `review`, `revalidate`, `export`, `publish`, `get_published` | Review and published `.xlsx` workbooks |

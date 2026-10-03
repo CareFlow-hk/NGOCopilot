@@ -1612,7 +1612,7 @@ export default function ChatInput({
             data-testid="chat-input"
             autoFocus
             id="dynamic-textarea"
-            placeholder={isRecording ? '' : getNavigationShortcutText(intl)}
+            placeholder={isRecording ? '' : window.appConfig?.get('NGOPILOT_AGENT_HOME') ? '說說你要完成的工作，也可以附上檔案…' : getNavigationShortcutText(intl)}
             value={displayValue}
             onChange={handleChange}
             onCompositionStart={handleCompositionStart}
@@ -1763,7 +1763,7 @@ export default function ChatInput({
           model selector + send button always stay visible. */}
       <div ref={bottomBarRef} className="flex flex-row items-center gap-2 px-3 py-2 relative">
         {/* Left: model selector */}
-        <Tooltip>
+        {!window.appConfig?.get('NGOPILOT_AGENT_HOME') && <Tooltip>
           <div>
             <ModelsBottomBar
               sessionId={sessionId}
@@ -1776,10 +1776,10 @@ export default function ChatInput({
               sessionLoaded={sessionLoaded}
             />
           </div>
-        </Tooltip>
+        </Tooltip>}
 
         {/* Left: working directory (leaf folder name only) */}
-        {!isBottomBarNarrow && (
+        {!isBottomBarNarrow && !window.appConfig?.get('NGOPILOT_AGENT_HOME') && (
           <DirSwitcher
             className=""
             sessionId={sessionId ?? undefined}
@@ -1794,7 +1794,11 @@ export default function ChatInput({
         {/* Spacer */}
         <div className="flex-1" />
 
-        {!isBottomBarNarrow && (
+        {window.appConfig?.get('NGOPILOT_AGENT_HOME') && <Button type="button"
+          onClick={handleFileSelect} disabled={isFilePickerOpen} variant="ghost" size="sm"
+          aria-label="加入附件" className="gap-2 text-text-secondary"><Attach className="w-4 h-4" />加入附件</Button>}
+
+        {!isBottomBarNarrow && !window.appConfig?.get('NGOPILOT_AGENT_HOME') && (
           <>
             {/* Right: cost tracker (when enabled) */}
             {COST_TRACKING_ENABLED && (

@@ -7,7 +7,12 @@ async function start(): Promise<void> {
   const root = document.getElementById("root");
   if (!root) throw new Error("NGOPilot root element is missing");
 
-  installBrowserShim();
+  // Local and hosted deployments share Wilson's renderer and the real ACP
+  // Agent. Runtime metadata contains display/default settings, never secrets.
+  const runtime = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/runtime`)
+    .then((response) => response.ok ? response.json() : {})
+    .catch(() => ({}));
+  installBrowserShim(runtime);
   await requireAuthentication(root);
   await import("@ngopilot/renderer");
 }

@@ -30,11 +30,15 @@ title when omitted.
    call to this tool.
 2. If `state` is `running`, call `status` with that `job_id`. Do not poll when
    `export` already appears in `next_operations`.
-3. Extracted records are approved automatically. Do not show a review step and
-   do not ask the user for confirmation.
-4. When `export` appears in `next_operations`, call `export` immediately with the
-   same `job_id`. The user's original request for an Excel workbook is sufficient
-   authorization; do not ask for another confirmation.
+3. Show the extracted fields alongside the source image. Wait for the user to
+   confirm them or provide corrections. Uploading a file or requesting an Excel
+   workbook does not confirm that extracted personal details are accurate.
+4. Call `review` with `input.confirm_all=true` only if the user explicitly
+   confirms all displayed records unchanged. For corrections, send `input.reviews`
+   with each record_id and its complete corrected 13-field final_fields object.
+5. When `export` appears in `next_operations`, export the reviewed records using
+   the same job_id. Clearly disclose omitted unreviewed records. Do not ask for
+   a redundant export confirmation if the user already requested the workbook.
 
 Later operations use these shapes:
 

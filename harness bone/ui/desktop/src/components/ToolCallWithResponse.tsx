@@ -22,6 +22,7 @@ import McpAppRenderer from './McpApps/McpAppRenderer';
 import ToolApprovalButtons from './ToolApprovalButtons';
 import { defineMessages, useIntl } from '../i18n';
 import { ArtifactText } from './ArtifactPathLink';
+import WorkflowTaskCard, { workflowResult } from './ngo/WorkflowTaskCard';
 
 type LoadingStatus = 'loading' | 'success' | 'error';
 
@@ -240,6 +241,13 @@ export default function ToolCallWithResponse({
 
   const requestWithMeta = toolRequest as ToolRequestWithMeta;
   const resultWithMeta = toolResponse?.toolResult as ToolResultWithMeta;
+  const workflow = workflowResult(resultWithMeta);
+  if (window.appConfig?.get('NGOPILOT_AGENT_HOME') && workflow) {
+    // The first tool response owns one persistent card. Later status/review/
+    // export calls update that card from durable job state instead of duplicating it.
+    if (toolCall.arguments?.operation !== 'start') return null;
+    return <WorkflowTaskCard initial={workflow} append={append} />;
+  }
   const hasMcpAppResourceURI = Boolean(
     requestWithMeta._meta?.ui?.resourceUri || resultWithMeta?.value?._meta?.ui?.resourceUri
   );

@@ -1,34 +1,37 @@
 # NGOPilot
 
-**CareFlow 文件工作台，本機試用版（2026-10-02）**。紙本轉 Excel、錄音整理成 Word、政府表格填報和排班草稿，沿用四個獨立 MCP 工作流程。AI 先產生草稿，使用者核對後才匯出。
+**Wilson 原有 Agent Chatbot，已接入四個 NGO 工作流程及可選的活動 Scheduler（2026-10-03）。** 用自然語言和附件交代工作，Agent 選擇工具；在對話中的任務卡核對後，取得真實文件。
 
-```sh
-./scripts/start-workbench.sh --env-file /absolute/path/to/provider.env
-```
+目前本機入口：**http://127.0.0.1:8310**。原四卡工作台已退出主入口。
 
-開啟 **http://127.0.0.1:8310**。需要 Python 3.12；首次啟動會安裝隔離環境及鎖定的原生依賴。可用 `NGOPILOT_PYTHON=/path/to/python3.12` 指定 Python。省略 `--env-file` 也能開啟介面，未設定的 AI 流程會清楚提示，沒有自動 mock fallback。
+| 工具 | 輸入 | 成品 |
+| --- | --- | --- |
+| 紙本表格 → Excel | 探訪表格圖片 | 已核對 Excel |
+| 會議／家訪記錄 | 錄音 + Word 範本 | Word 記錄 |
+| 政府表格填報 | 支援表格及長者資料 | PDF |
+| 人手排班 | HC 家居照顧時間表 + 護送總表 + 目標週 | 排班草稿 Excel |
+| 活動小冊子 → 日曆 | PDF + 年份 | ICS、CSV，同批活動月曆 |
 
-- [操作、設定與備份](docs/takeover/HANDOVER.md)
-- [兩分鐘演示與試用驗證](docs/takeover/DEMO.md)
-- [實際驗收、材料時效及已知限制](docs/takeover/2026-10-02-evidence.md)
-- [合成示範檔案](deployment/workbench/samples/README.md)
+- [啟動、使用與備份](docs/agent-chatbot/HANDOVER.md)
+- [Opus 5.5 的產品決定](docs/agent-chatbot/opus-product-decision.md)
+- [本輪驗收證據](docs/agent-chatbot/ACCEPTANCE.md)
 
-活動冊月曆已拆為獨立 **CareFlow Scheduler**（旁邊的 `Careflow Scheduler` repo，8311）。既有 Atlas 負責地區探訪視覺化；本次未改動 Atlas。這三者不共享個案資料或假設彼此已部署。
+Scheduler 保留旁邊的 `Careflow Scheduler` repo 及 8311 月曆介面，作為第五個獨立工具接入。Atlas 維持既有地區探訪原型，本輪沒有改動。
 
-以下保留完整 Agent 的技術架構；日常試用由上面的四卡工作台開始。
+`docs/takeover/` 記錄 10 月 2 日的歷史工作台方案；產品入口與本輪驗收請以上述 Agent 文件為準。現有驗收使用合成資料，沒有把它當成 NGO 採用或雲端部署。
 
 ![NGOPilot layered product architecture](docs/images/ngopilot-layered-product-architecture.png)
 
 ## Repository Layout
 
 - `harness bone/`: NGOPilot agent runtime, CLI, and desktop application
-- `MCPcode/`: NGOPilot MCP server and four stateful NGO workflow tools
+- `MCPcode/`: NGOPilot MCP server and four original stateful NGO tools and an optional Scheduler tool
 - `algo-dependencies/CareFlow/`: CareFlow algorithm dependency source
 - `algo-dependencies/RosterCopiilot/`: roster algorithm dependency source
 
-The advanced NGOPilot Agent uses the MCP server as a first-party stdio extension.
-The direct workbench calls the same controllers; MCP retains ownership of
-workflow validation, durable jobs, review state, and delivered artifacts.
+The original NGOPilot Agent uses the MCP server as a first-party stdio extension.
+MCP owns workflow validation, durable jobs, review state, and delivered artifacts.
+The authenticated conversation task card records exact human confirmations; the Agent cannot grant them through MCP.
 
 See [Agent-MCP Architecture Design Plan.md](Agent-MCP%20Architecture%20Design%20Plan.md)
 for the product architecture and

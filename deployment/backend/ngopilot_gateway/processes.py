@@ -261,6 +261,7 @@ class TenantProcessManager:
             "GOOSE_MODEL": self.settings.goose_model,
             "GOOSE_MODE": "auto",
             "GOOSE_DISABLE_KEYRING": True,
+            "GOOSE_TELEMETRY_ENABLED": False,
             "extensions": {
                 **{name: {"enabled": False} for name in DISABLED_CLOUD_EXTENSIONS},
                 "ngopilot": {
@@ -282,6 +283,14 @@ class TenantProcessManager:
         config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         config_path.chmod(0o600)
 
+        # Deployment-owned instructions augment the original Agent; they do
+        # not replace its planner, model session or MCP extension manager.
+        instructions = Path(__file__).with_name("agent_instructions.md")
+        if instructions.is_file():
+            (tenant_root / ".ngopilothints").write_text(
+                instructions.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
         env = os.environ.copy()
         env.update(
             {
@@ -293,6 +302,7 @@ class TenantProcessManager:
                 "OPENROUTER_API_KEY": self.settings.openrouter_api_key,
                 "NGOPILOT_MCP_STATE_DIR": str(workflow_root),
                 "NGOPILOT_MCP_ALLOWED_INPUT_ROOTS": str(uploads_root),
+                "NGOPILOT_MCP_REQUIRE_HUMAN_CONFIRMATION": "true",
                 "TMPDIR": str(temp_root),
                 "GOOSE_DISABLE_NOSTR_SHARING": "true",
             }
@@ -365,6 +375,11 @@ class TenantProcessManager:
                         line.decode("utf-8", errors="replace").rstrip()[:2000],
                         managed.secret,
                         self.settings.openrouter_api_key,
+                        *(
+                            value
+                            for key, value in os.environ.items()
+                            if key.endswith(("_API_KEY", "_AD_TOKEN")) and value
+                        ),
                     ),
                 )
         except asyncio.CancelledError:

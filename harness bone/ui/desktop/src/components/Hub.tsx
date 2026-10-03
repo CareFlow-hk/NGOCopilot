@@ -60,6 +60,8 @@ export default function Hub({
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [example, setExample] = useState('');
+  const ngoHome = window.appConfig?.get('NGOPILOT_AGENT_HOME') === true;
   const { time, meridiem, hour } = useClock();
 
   const greeting = useMemo(() => {
@@ -138,7 +140,15 @@ export default function Hub({
 
           <LanguageSelector className="col-span-2 justify-self-end sm:col-span-1 sm:justify-self-end" />
         </div>
-        <p className="mb-6 text-xl text-text-secondary">{greeting}</p>
+        <p className="mb-3 text-xl text-text-secondary">{ngoHome ? '把工作交代給我，從一句話和附件開始。' : greeting}</p>
+        {ngoHome && <>
+          <p className="mb-4 text-sm text-text-secondary">整理表格、記錄會議、填報文件、安排人手。需要核對時，我會停下來請你確認。</p>
+          <div className="mb-5 flex flex-wrap gap-2" aria-label="試試這樣問">
+            {['把這幾張探訪表格整理成 Excel', '用錄音和範本整理會議記錄', '幫我填寫長者福利申請表', '根據兩份工作表安排下週人手', ...(window.appConfig?.get('NGOPILOT_SCHEDULER_ENABLED') ? ['把活動小冊子整理成日曆'] : [])].map((prompt) => <button key={prompt}
+              className="rounded-full border border-border-primary px-3 py-2 text-xs text-text-secondary hover:bg-background-secondary"
+              onClick={() => { setExample(prompt); inputRef.current?.focus(); }}>{prompt}</button>)}
+          </div>
+        </>}
 
         <ChatInputCard>
           <ChatInput
@@ -146,7 +156,7 @@ export default function Hub({
             handleSubmit={handleSubmit}
             chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
             onStop={() => {}}
-            initialValue=""
+            initialValue={example}
             setView={setView}
             totalTokens={0}
             accumulatedInputTokens={0}
