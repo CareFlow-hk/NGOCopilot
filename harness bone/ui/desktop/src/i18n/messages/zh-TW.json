@@ -62,6 +62,39 @@
   "appsView.title": {
     "defaultMessage": "應用程式"
   },
+  "artifactPathLink.action": {
+    "defaultMessage": "下載"
+  },
+  "artifactPathLink.download": {
+    "defaultMessage": "下載 {filename}"
+  },
+  "artifactPathLink.failedMessage": {
+    "defaultMessage": "未能下載已產生的文件。文件可能已被清除或失效，請在對話中要求重新匯出。"
+  },
+  "artifactPathLink.failedTitle": {
+    "defaultMessage": "下載失敗"
+  },
+  "artifactPathLink.preparing": {
+    "defaultMessage": "正在準備下載…"
+  },
+  "artifactPathLink.typeCalendar": {
+    "defaultMessage": "日曆檔（ICS）"
+  },
+  "artifactPathLink.typeCsv": {
+    "defaultMessage": "CSV 表格"
+  },
+  "artifactPathLink.typeExcel": {
+    "defaultMessage": "Excel 試算表"
+  },
+  "artifactPathLink.typeFile": {
+    "defaultMessage": "已產生的文件"
+  },
+  "artifactPathLink.typePdf": {
+    "defaultMessage": "PDF 文件"
+  },
+  "artifactPathLink.typeWord": {
+    "defaultMessage": "Word 文件"
+  },
   "authSettings.activeProviderWarning": {
     "defaultMessage": "這是目前使用中的供應商。在您設定其他憑證之前，新的請求可能會失敗。"
   },

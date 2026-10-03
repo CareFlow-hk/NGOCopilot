@@ -15,7 +15,7 @@ const defaultSettings: Record<string, unknown> = {
   keyboardShortcuts: {},
   externalGoosed: { enabled: true, url: "", secret: "" },
   theme: "light",
-  useSystemTheme: true,
+  useSystemTheme: false,
   language: "zh-HK",
   responseStyle: "concise",
   showPricing: false,

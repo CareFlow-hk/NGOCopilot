@@ -102,7 +102,7 @@ const NavRow: React.FC<NavRowProps> = ({ item, active, onClick }) => {
   const intl = useIntl();
   const Icon = item.icon;
   return (
-    <button onClick={onClick} className={navItemClass(active)}>
+    <button onClick={onClick} className={cn('ngo-nav-row', navItemClass(active))} aria-current={active ? 'page' : undefined}>
       <Icon className="w-5 h-5 flex-shrink-0 text-text-secondary" />
       <span className="text-left flex-1 truncate">{getNavItemLabel(item, intl)}</span>
       {item.getTag && (
@@ -138,8 +138,9 @@ const SessionRow: React.FC<SessionRowProps> = ({
   return (
     <div
       onClick={() => !isEditing && onClick()}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'group flex items-center gap-1 px-3 py-1.5 rounded-full cursor-pointer text-sm',
+        'ngo-session-row group flex items-center gap-1 px-3 py-1.5 rounded-full cursor-pointer text-sm',
         'hover:bg-background-tertiary/60 transition-colors',
         active && 'bg-background-tertiary'
       )}
@@ -341,7 +342,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
       <div className="flex-1 min-h-0 flex flex-col mt-3">
         <button
           onClick={() => setIsChatsExpanded((v) => !v)}
-          className="flex items-center gap-1 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors self-start"
+          className="ngo-session-heading flex items-center gap-1 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors self-start"
         >
           {isChatsExpanded ? (
             <ChevronDown className="w-3 h-3" />
@@ -412,8 +413,8 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
         )}
       </div>
 
-      <div className="px-2 pt-2 pb-2 border-t border-border-secondary">
-        {window.appConfig?.get('NGOPILOT_AGENT_HOME') && <details className="mb-2 text-sm">
+      <div className="ngo-nav-footer px-2 pt-2 pb-2 border-t border-border-secondary">
+        {window.appConfig?.get('NGOPILOT_AGENT_HOME') && <details className="ngo-nav-advanced mb-2 text-sm">
           <summary className="cursor-pointer px-3 py-2 text-text-secondary">進階工具</summary>
           {NAV_ITEMS.filter((item) => !['home', 'sessions', 'scheduler', 'apps'].includes(item.id)).map((item) => <NavRow key={item.id} item={item} active={isActive(item.path)} onClick={() => handleNavClick(item.path)} />)}
         </details>}

@@ -1,17 +1,15 @@
 /**
  * Theme tokens — the single source of truth for all MCP semantic token values.
  *
- * Every key in McpUiStyleVariableKey must be present in both lightTokens and
- * darkTokens. The TypeScript compiler enforces this: if the SDK adds a new key,
- * the build breaks until both maps are updated.
- *
- * Values are applied to :root via style.setProperty() before first paint
- * (see renderer.tsx). main.css only registers the variable names for Tailwind
- * class generation — it does NOT define values.
+ * NGOPilot is light-only: one warm paper palette (the CareFlow Atlas system)
+ * is applied to :root before first paint (see renderer.tsx) and re-applied by
+ * ThemeProvider. The OS colour scheme and any stored dark preference are
+ * ignored. Every key in McpUiStyleVariableKey must be present; the TypeScript
+ * compiler enforces this when the SDK adds a key.
  *
  * These tokens serve two purposes:
- *  1. NGOPilot desktop — applied to :root per resolved theme.
- *  2. MCP apps — encoded as light-dark() in hostContext.styles.variables.
+ *  1. NGOPilot UI — applied to :root.
+ *  2. MCP apps — passed as plain light values in hostContext.styles.variables.
  */
 import type {
   McpUiHostStyles,
@@ -21,7 +19,7 @@ import type {
 
 type ThemeTokens = Record<McpUiStyleVariableKey, string>;
 
-// Subset of keys that are the same across both themes.
+// Non-colour keys (typography, radii, border widths).
 type BaseTokenKey = Extract<
   McpUiStyleVariableKey,
   `--font-${string}` | `--border-radius-${string}` | `--border-width-${string}`
@@ -30,7 +28,7 @@ type BaseTokenKey = Extract<
 type ColorTokenKey = Exclude<McpUiStyleVariableKey, BaseTokenKey>;
 
 // ---------------------------------------------------------------------------
-// Base tokens — shared across light and dark themes
+// Base tokens — typography, radii and borders
 // ---------------------------------------------------------------------------
 const baseTokens: Pick<ThemeTokens, BaseTokenKey> = {
   // Typography — families
@@ -75,21 +73,21 @@ const baseTokens: Pick<ThemeTokens, BaseTokenKey> = {
 
   // Border radius
   '--border-radius-xs': '2px',
-  '--border-radius-sm': '4px',
-  '--border-radius-md': '8px',
-  '--border-radius-lg': '12px',
-  '--border-radius-xl': '16px',
+  '--border-radius-sm': '2px',
+  '--border-radius-md': '3px',
+  '--border-radius-lg': '3px',
+  '--border-radius-xl': '4px',
   '--border-radius-full': '9999px',
 
   // Border width
   '--border-width-regular': '1px',
 };
 
-// Theme-specific color/shadow tokens only.
+// Colour and shadow tokens.
 type ColorTokens = Pick<ThemeTokens, ColorTokenKey>;
 
 // ---------------------------------------------------------------------------
-// Light theme — colors & shadows
+// Light paper palette — colours & shadows
 // ---------------------------------------------------------------------------
 const lightColorTokens: ColorTokens = {
   // Backgrounds
@@ -101,31 +99,31 @@ const lightColorTokens: ColorTokens = {
   '--color-background-info': '#7d3b27',
   '--color-background-danger': '#6b2419',
   '--color-background-success': '#7d3b27',
-  '--color-background-warning': '#a8841f',
+  '--color-background-warning': '#9a6420',
   '--color-background-disabled': '#efe8da',
 
   // Text
   '--color-text-primary': '#1d2622',
-  '--color-text-secondary': '#7a766b',
+  '--color-text-secondary': '#5f5b52',
   '--color-text-tertiary': '#7a766b',
   '--color-text-inverse': '#fffdf8',
-  '--color-text-ghost': '#7a766b',
+  '--color-text-ghost': '#6b675d',
   '--color-text-info': '#7d3b27',
   '--color-text-danger': '#6b2419',
   '--color-text-success': '#7d3b27',
-  '--color-text-warning': '#6b5310',
+  '--color-text-warning': '#7a4c12',
   '--color-text-disabled': '#969083',
 
   // Borders
-  '--color-border-primary': '#efe8da',
-  '--color-border-secondary': '#ddd6c6',
+  '--color-border-primary': '#ddd6c6',
+  '--color-border-secondary': '#cbc3b1',
   '--color-border-tertiary': '#969083',
   '--color-border-inverse': '#1d2622',
   '--color-border-ghost': 'transparent',
   '--color-border-info': '#7d3b27',
   '--color-border-danger': '#6b2419',
   '--color-border-success': '#7d3b27',
-  '--color-border-warning': '#a8841f',
+  '--color-border-warning': '#9a6420',
   '--color-border-disabled': '#efe8da',
 
   // Rings
@@ -135,76 +133,19 @@ const lightColorTokens: ColorTokens = {
   '--color-ring-info': '#7d3b27',
   '--color-ring-danger': '#6b2419',
   '--color-ring-success': '#7d3b27',
-  '--color-ring-warning': '#a8841f',
+  '--color-ring-warning': '#9a6420',
 
   // Shadows
   '--shadow-hairline': '0 0 0 1px rgba(31, 28, 24, 0.06)',
   '--shadow-sm': '0 1px 2px 0 rgba(31, 28, 24, 0.06)',
-  '--shadow-md': '0 1px 0 rgba(20, 18, 14, 0.06), 0 24px 48px -32px rgba(20, 18, 14, 0.18)',
-  '--shadow-lg': '0 18px 38px rgba(31, 28, 24, 0.09)',
-};
-
-// ---------------------------------------------------------------------------
-// Dark theme — colors & shadows
-// ---------------------------------------------------------------------------
-const darkColorTokens: ColorTokens = {
-  // Backgrounds
-  '--color-background-primary': '#1d2622',
-  '--color-background-secondary': '#1d2622',
-  '--color-background-tertiary': '#514e46',
-  '--color-background-inverse': '#fffdf8',
-  '--color-background-ghost': 'transparent',
-  '--color-background-info': '#7d3b27',
-  '--color-background-danger': '#6b2419',
-  '--color-background-success': '#7d3b27',
-  '--color-background-warning': '#a8841f',
-  '--color-background-disabled': '#514e46',
-
-  // Text
-  '--color-text-primary': '#fffdf8',
-  '--color-text-secondary': '#ddd6c6',
-  '--color-text-tertiary': '#969083',
-  '--color-text-inverse': '#1d2622',
-  '--color-text-ghost': '#ddd6c6',
-  '--color-text-info': '#f5c8bb',
-  '--color-text-danger': '#f5c8bb',
-  '--color-text-success': '#d6e0d1',
-  '--color-text-warning': '#faf2dc',
-  '--color-text-disabled': '#7a766b',
-
-  // Borders
-  '--color-border-primary': '#514e46',
-  '--color-border-secondary': '#7a766b',
-  '--color-border-tertiary': '#7a766b',
-  '--color-border-inverse': '#fffdf8',
-  '--color-border-ghost': 'transparent',
-  '--color-border-info': '#92513d',
-  '--color-border-danger': '#92513d',
-  '--color-border-success': '#7d3b27',
-  '--color-border-warning': '#a8841f',
-  '--color-border-disabled': '#514e46',
-
-  // Rings
-  '--color-ring-primary': '#92513d',
-  '--color-ring-secondary': '#7a766b',
-  '--color-ring-inverse': '#1d2622',
-  '--color-ring-info': '#92513d',
-  '--color-ring-danger': '#92513d',
-  '--color-ring-success': '#7d3b27',
-  '--color-ring-warning': '#a8841f',
-
-  // Shadows
-  '--shadow-hairline': '0 0 0 1px rgba(252, 250, 243, 0.08)',
-  '--shadow-sm': '0 1px 2px 0 rgba(14, 12, 10, 0.3)',
-  '--shadow-md': '0 1px 0 rgba(252, 250, 243, 0.05), 0 24px 48px -32px rgba(14, 12, 10, 0.72)',
-  '--shadow-lg': '0 18px 38px rgba(14, 12, 10, 0.54)',
+  '--shadow-md': '0 8px 24px rgba(58, 46, 26, 0.10)',
+  '--shadow-lg': '0 14px 36px rgba(58, 46, 26, 0.14)',
 };
 
 // ---------------------------------------------------------------------------
 // Merged token maps — used by applyThemeTokens() and buildMcpHostStyles()
 // ---------------------------------------------------------------------------
 export const lightTokens: ThemeTokens = { ...baseTokens, ...lightColorTokens };
-export const darkTokens: ThemeTokens = { ...baseTokens, ...darkColorTokens };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -243,46 +184,35 @@ const HOST_FONT_CSS = `
 `.trim();
 
 /**
- * Build the McpUiHostStyles object for MCP apps.
- * Color keys use light-dark() so a single payload works for both themes.
- * Non-color keys (fonts, radii, shadows) use plain values from baseTokens
- * (or light as the default when values differ, e.g. shadows).
- * css.fonts provides @font-face rules so sandboxed apps can load host fonts.
+ * Build the McpUiHostStyles object for MCP apps. NGOPilot is light-only, so
+ * every key carries its plain light value. css.fonts provides @font-face rules
+ * so sandboxed apps can load host fonts.
  */
 export function buildMcpHostStyles(): McpUiHostStyles {
   const variables: McpUiStyles = {} as McpUiStyles;
   for (const key of Object.keys(lightTokens) as McpUiStyleVariableKey[]) {
-    const light = lightTokens[key];
-    const dark = darkTokens[key];
-    if (key.startsWith('--color-')) {
-      variables[key] = `light-dark(${light}, ${dark})`;
-    } else {
-      variables[key] = light;
-    }
+    variables[key] = lightTokens[key];
   }
   return { variables, css: { fonts: HOST_FONT_CSS } };
 }
 
 /**
- * Resolve the current theme from localStorage / system preference.
+ * NGOPilot always resolves to the light theme, regardless of OS preference or
+ * a previously stored `theme: dark` setting.
  */
-export function getResolvedTheme(): 'light' | 'dark' {
-  const useSystem = localStorage.getItem('use_system_theme') !== 'false';
-  if (useSystem) {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+export function getResolvedTheme(): 'light' {
+  return 'light';
 }
 
 /**
- * Apply theme tokens to the document root as CSS custom properties.
- * When called without an argument, resolves the theme from localStorage.
+ * Apply the light theme tokens to the document root as CSS custom properties.
+ * The optional argument is accepted for compatibility and ignored.
  */
-export function applyThemeTokens(theme?: 'light' | 'dark'): void {
-  const resolved = theme ?? getResolvedTheme();
-  const tokens = resolved === 'dark' ? darkTokens : lightTokens;
+export function applyThemeTokens(_theme?: 'light' | 'dark'): void {
   const root = document.documentElement;
-  for (const [key, value] of Object.entries(tokens)) {
+  root.classList.remove('dark');
+  root.style.colorScheme = 'light';
+  for (const [key, value] of Object.entries(lightTokens)) {
     root.style.setProperty(key, value);
   }
 }

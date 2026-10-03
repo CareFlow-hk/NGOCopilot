@@ -34,8 +34,9 @@ describe('MarkdownContent', () => {
         const link = await screen.findByRole('link', { name: 'Download visit report.xlsx' });
 
         expect(link).toHaveAttribute('href', path);
-        expect(link).toHaveTextContent('Download result');
-        expect(link).toHaveClass('min-h-12', 'px-4', 'py-3', 'bg-cinnabar-600');
+        expect(link).toHaveTextContent('Excel workbook');
+        expect(link).toHaveTextContent('visit report');
+        expect(link).toHaveTextContent('Download');
         expect(container).not.toHaveTextContent(path);
 
         fireEvent.click(link);
@@ -63,7 +64,8 @@ describe('MarkdownContent', () => {
           name: 'Download 150b0f26f219_batch_9_20260812_044802.xlsx',
         });
 
-        expect(link).toHaveTextContent('Download result');
+        expect(link).toHaveTextContent('Excel workbook');
+        expect(link).toHaveTextContent('batch 9');
         expect(container).not.toHaveTextContent('Path:');
         expect(container).not.toHaveTextContent('150b0f26f219_batch_9_20260812_044802.xlsx');
       } finally {
@@ -71,7 +73,7 @@ describe('MarkdownContent', () => {
       }
     });
 
-    it('keeps intermediate artifact paths compact and visibly identified', async () => {
+    it('keeps intermediate artifact paths compact and readably labelled', async () => {
       const path = '/data/tenants/user/workflow/jobs/job-1/outputs/intermediate_review.xlsx';
       const originalAppConfig = window.appConfig;
       window.appConfig = {
@@ -87,9 +89,7 @@ describe('MarkdownContent', () => {
           name: 'Download intermediate_review.xlsx',
         });
 
-        expect(link).toHaveTextContent('Download intermediate_review.xlsx');
-        expect(link).toHaveClass('px-2', 'py-1', 'text-xs');
-        expect(link).not.toHaveClass('min-h-12', 'bg-cinnabar-600');
+        expect(link).toHaveTextContent('Excel workbook · intermediate review');
         expect(container).toHaveTextContent('Path:');
       } finally {
         window.appConfig = originalAppConfig;
@@ -116,7 +116,7 @@ describe('MarkdownContent', () => {
         expect(container).toHaveTextContent(paths[0]);
         expect(container).toHaveTextContent(paths[1]);
         expect(container.querySelector('[data-artifact-path]')).not.toBeInTheDocument();
-        expect(container).not.toHaveTextContent('Download result');
+        expect(container).not.toHaveTextContent('Excel workbook');
       } finally {
         window.appConfig = originalAppConfig;
       }

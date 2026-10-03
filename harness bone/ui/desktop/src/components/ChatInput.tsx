@@ -1945,7 +1945,7 @@ export default function ChatInput({
                   aria-label={intl.formatMessage(i18n.send)}
                   onClick={onFormSubmit}
                   className={cn(
-                    'bg-background-tertiary',
+                    'ngo-send-button bg-background-tertiary',
                     isSubmitButtonDisabled
                       ? 'text-text-secondary cursor-not-allowed opacity-60'
                       : 'text-text-primary hover:bg-background-tertiary/70 hover:cursor-pointer'

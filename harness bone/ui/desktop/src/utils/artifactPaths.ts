@@ -29,6 +29,24 @@ export function artifactFilename(path: string): string {
   }
 }
 
+export function artifactExtension(filename: string): string {
+  return (filename.match(/\.([a-z0-9]+)$/i)?.[1] ?? '').toLowerCase();
+}
+
+/**
+ * A human-readable name for a generated file, or null when the filename is
+ * only storage identifiers (hex digests, UUID fragments, timestamps).
+ * `ff3f0f660050_batch_4_20260806_135134.xlsx` → `batch 4`.
+ */
+export function artifactReadableName(filename: string): string | null {
+  const stem = filename.replace(/\.[a-z0-9]+$/i, '');
+  const words = stem
+    .split(/[_\-\s]+/)
+    .filter((word) => word && !/^[0-9a-f]{8,}$/i.test(word) && !/^\d{6,}$/.test(word));
+  const name = words.join(' ').trim();
+  return /[\p{L}]{2,}/u.test(name) ? name : null;
+}
+
 export function artifactFilesystemPath(path: string): string {
   try {
     return decodeURIComponent(path);

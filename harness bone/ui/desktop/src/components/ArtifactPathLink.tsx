@@ -3,8 +3,10 @@ import { Download } from 'lucide-react';
 import { defineMessages, useIntl } from '../i18n';
 import {
   artifactDownloadsEnabled,
+  artifactExtension,
   artifactFilename,
   artifactFilesystemPath,
+  artifactReadableName,
   findDownloadableArtifactPaths,
 } from '../utils/artifactPaths';
 
@@ -13,9 +15,9 @@ const i18n = defineMessages({
     id: 'artifactPathLink.download',
     defaultMessage: 'Download {filename}',
   },
-  downloadResult: {
-    id: 'artifactPathLink.downloadResult',
-    defaultMessage: 'Download result',
+  action: {
+    id: 'artifactPathLink.action',
+    defaultMessage: 'Download',
   },
   preparing: {
     id: 'artifactPathLink.preparing',
@@ -29,7 +31,55 @@ const i18n = defineMessages({
     id: 'artifactPathLink.failedMessage',
     defaultMessage: 'The generated file could not be downloaded.',
   },
+  typeExcel: { id: 'artifactPathLink.typeExcel', defaultMessage: 'Excel workbook' },
+  typeWord: { id: 'artifactPathLink.typeWord', defaultMessage: 'Word document' },
+  typePdf: { id: 'artifactPathLink.typePdf', defaultMessage: 'PDF document' },
+  typeCalendar: { id: 'artifactPathLink.typeCalendar', defaultMessage: 'Calendar file (ICS)' },
+  typeCsv: { id: 'artifactPathLink.typeCsv', defaultMessage: 'CSV table' },
+  typeFile: { id: 'artifactPathLink.typeFile', defaultMessage: 'Generated file' },
 });
+
+type ArtifactMessage = (typeof i18n)[keyof typeof i18n];
+
+// The web build ships no compiled catalogs, so react-intl would fall back to
+// English for zh-HK users. These mirror messages/zh-TW.json; a loaded catalog
+// still takes precedence.
+const TRADITIONAL_CHINESE: Record<string, string> = {
+  'artifactPathLink.download': '下載 {filename}',
+  'artifactPathLink.action': '下載',
+  'artifactPathLink.preparing': '正在準備下載…',
+  'artifactPathLink.failedTitle': '下載失敗',
+  'artifactPathLink.failedMessage':
+    '未能下載已產生的文件。文件可能已被清除或失效，請在對話中要求重新匯出。',
+  'artifactPathLink.typeExcel': 'Excel 試算表',
+  'artifactPathLink.typeWord': 'Word 文件',
+  'artifactPathLink.typePdf': 'PDF 文件',
+  'artifactPathLink.typeCalendar': '日曆檔（ICS）',
+  'artifactPathLink.typeCsv': 'CSV 表格',
+  'artifactPathLink.typeFile': '已產生的文件',
+};
+
+function useArtifactMessages() {
+  const intl = useIntl();
+  const traditional = /^zh-(hk|tw|mo|hant)\b/i.test(intl.locale);
+  return (message: ArtifactMessage, values?: Record<string, string>) => {
+    const fallback = TRADITIONAL_CHINESE[message.id];
+    if (traditional && fallback && !intl.messages[message.id]) {
+      return intl.formatMessage({ id: message.id, defaultMessage: fallback }, values);
+    }
+    return intl.formatMessage(message, values);
+  };
+}
+
+const TYPE_MESSAGES: Record<string, ArtifactMessage> = {
+  xlsx: i18n.typeExcel,
+  xls: i18n.typeExcel,
+  docx: i18n.typeWord,
+  doc: i18n.typeWord,
+  pdf: i18n.typePdf,
+  ics: i18n.typeCalendar,
+  csv: i18n.typeCsv,
+};
 
 interface ArtifactPathLinkProps {
   path: string;
@@ -44,19 +94,20 @@ export function ArtifactPathLink({
   compact = false,
   inverted = false,
 }: ArtifactPathLinkProps) {
-  const intl = useIntl();
+  const t = useArtifactMessages();
   const [isDownloading, setIsDownloading] = useState(false);
   const filesystemPath = artifactFilesystemPath(path);
   const filename = artifactFilename(filesystemPath);
-  const displayFilename = typeof children === 'string' && children.trim() ? children : filename;
-  const appearance = compact
-    ? inverted
-      ? 'border-gray-600 bg-gray-800 text-gray-100 hover:bg-gray-700 focus-visible:ring-gray-400'
-      : 'border-border-primary bg-background-secondary text-text-primary hover:bg-background-primary focus-visible:ring-border-primary'
-    : 'border-cinnabar-600 bg-cinnabar-600 text-paper-50 hover:border-cinnabar-700 hover:bg-cinnabar-700 active:border-cinnabar-700 active:bg-cinnabar-700 focus-visible:ring-cinnabar-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background-primary';
-  const sizing = compact
-    ? 'my-0.5 gap-1.5 px-2 py-1 text-xs'
-    : 'my-2 min-h-12 w-fit gap-3 px-4 py-3 text-sm sm:text-base';
+  const linkText = typeof children === 'string' ? children.trim() : '';
+  const displayFilename = linkText || filename;
+  const extension = artifactExtension(filename);
+  const typeLabel = t(TYPE_MESSAGES[extension] ?? i18n.typeFile);
+  // Storage names carry hashes and timestamps; show the file type plus any
+  // readable part of the name, and keep the exact path in the tooltip.
+  const readableName =
+    linkText && !linkText.includes('/') && linkText !== filename
+      ? linkText
+      : artifactReadableName(filename);
 
   const handleDownload = async (event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault();
@@ -70,8 +121,8 @@ export function ArtifactPathLink({
       await window.electron.showMessageBox({
         type: 'error',
         buttons: ['OK'],
-        title: intl.formatMessage(i18n.failedTitle),
-        message: intl.formatMessage(i18n.failedMessage),
+        title: t(i18n.failedTitle),
+        message: t(i18n.failedMessage),
         detail: filename,
       });
     } finally {
@@ -79,34 +130,45 @@ export function ArtifactPathLink({
     }
   };
 
+  const variant = compact ? (inverted ? 'is-compact is-inverted' : 'is-compact') : 'is-result';
+
   return (
     <a
       href={filesystemPath}
-      title={filesystemPath}
-      aria-label={intl.formatMessage(i18n.download, { filename: displayFilename })}
+      title={filename}
+      aria-label={t(i18n.download, { filename: displayFilename })}
       aria-busy={isDownloading}
       aria-disabled={isDownloading}
       data-artifact-path={filesystemPath}
-      className={`inline-flex max-w-full cursor-pointer items-center rounded-md border align-middle font-sans font-semibold no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 aria-disabled:pointer-events-none aria-disabled:opacity-70 ${sizing} ${appearance}`}
+      className={`artifact-link ${variant}`}
       onClick={(event) => void handleDownload(event)}
     >
-      <span
-        className={
-          compact
-            ? 'flex h-5 w-5 flex-shrink-0 items-center justify-center'
-            : 'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-paper-50/15'
-        }
-        aria-hidden="true"
-      >
-        <Download className={compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
-      </span>
-      <span className={compact ? 'truncate' : 'min-w-0 overflow-wrap-anywhere text-left'}>
-        {isDownloading
-          ? intl.formatMessage(i18n.preparing)
-          : compact
-            ? intl.formatMessage(i18n.download, { filename: children ?? filename })
-            : intl.formatMessage(i18n.downloadResult)}
-      </span>
+      {compact ? (
+        <>
+          <Download className="artifact-link-icon" aria-hidden="true" />
+          <span className="artifact-link-label">
+            {isDownloading
+              ? t(i18n.preparing)
+              : readableName
+                ? `${typeLabel} · ${readableName}`
+                : typeLabel}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="artifact-link-type" aria-hidden="true">
+            {extension.toUpperCase() || '—'}
+          </span>
+          <span className="artifact-link-text">
+            <strong>{typeLabel}</strong>
+            {readableName && <small>{readableName}</small>}
+          </span>
+          <span className="artifact-link-action" aria-hidden="true">
+            <Download className="artifact-link-icon" />
+            {isDownloading ? t(i18n.preparing) : t(i18n.action)}
+          </span>
+        </>
+      )}
     </a>
   );
 }
@@ -144,7 +206,7 @@ export function ArtifactLinkList({ text }: { text: string }) {
   if (matches.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-gray-700 bg-gray-800 px-3 py-2 font-sans text-xs text-gray-200">
+    <div className="artifact-link-list">
       {matches.map((match) => (
         <ArtifactPathLink key={match.path} path={match.path} compact inverted />
       ))}

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Download } from 'lucide-react';
 
 type Data = Record<string, any>;
 export const NGO_TOOLS: Record<string, string> = {
@@ -15,6 +16,53 @@ const states: Record<string, string> = {
   ready: '可核對及匯出', confirmed: '已核對', reviewed: '已核對',
   exported: '文件已產生', published: '已發佈', failed: '未能完成', blocked: '有待處理事項',
 };
+
+// Visual tone of the task: drives the status mark and the explanatory note.
+function stateTone(state: string): 'review' | 'running' | 'done' | 'alert' {
+  if (state === 'failed' || state === 'blocked') return 'alert';
+  if (['exported', 'published', 'confirmed', 'reviewed'].includes(state)) return 'done';
+  if (state === 'accepted' || state === 'running') return 'running';
+  return 'review';
+}
+
+const stateNotes: Record<string, string> = {
+  accepted: '工具處理中，完成後此卡會自動更新。',
+  running: '工具處理中，完成後此卡會自動更新。',
+  exported: '文件已產生，以上核對內容已鎖定。如需修改，請在對話中說明。',
+  published: '已正式發佈並留下發佈紀錄；不會自動通知員工。',
+};
+
+// Readable names for promoted artifacts. The download still uses the exact
+// verified path; only the label shown to the user changes.
+const artifactKinds: Record<string, { label: string; hint: string }> = {
+  volunteer_forms_excel: { label: '探訪表格整理（Excel）', hint: '已按你的核對內容匯出' },
+  meeting_note_docx: { label: '會議／家訪記錄（Word）', hint: '按範本整理的記錄' },
+  filled_government_form_pdf: { label: '已填寫的政府表格（PDF）', hint: '提交前請再檢查一次' },
+  roster_review_workbook: { label: '排班草稿（Excel）', hint: '供核對，尚未發佈' },
+  roster_final_workbook: { label: '已發佈排班（Excel）', hint: '正式發佈版本' },
+  activity_calendar: { label: '活動日曆（ICS）', hint: '可匯入 Google、Outlook 或 Apple 日曆' },
+  activity_list: { label: '活動清單（CSV）', hint: '可用 Excel 開啟' },
+};
+
+const extensionLabels: Record<string, string> = {
+  xlsx: 'Excel 試算表', xls: 'Excel 試算表', docx: 'Word 文件', doc: 'Word 文件', pdf: 'PDF 文件',
+  ics: '日曆檔（ICS）', csv: 'CSV 表格', txt: '文字檔', zip: '壓縮檔',
+};
+
+function describeArtifact(artifact: Data) {
+  const filename = String(artifact.path || '').split('/').pop() || '';
+  const ext = (filename.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+  const known = artifactKinds[artifact.kind];
+  const size = typeof artifact.size_bytes === 'number'
+    ? artifact.size_bytes < 1024 ? `${artifact.size_bytes} B` : artifact.size_bytes < 1048576 ? `${Math.round(artifact.size_bytes / 1024)} KB` : `${(artifact.size_bytes / 1048576).toFixed(1)} MB`
+    : '';
+  return {
+    filename,
+    ext: ext.toUpperCase() || '檔案',
+    label: known?.label || extensionLabels[ext] || '已產生的文件',
+    hint: [known?.hint, size].filter(Boolean).join(' · '),
+  };
+}
 
 function apiPath(path: string) {
   return `${String(window.appConfig?.get('NGOPILOT_API_URL') || '').replace(/\/$/, '')}${path}`;
@@ -105,14 +153,15 @@ function initialDraft(job: Data): Data {
   return {};
 }
 
-function Field({ label, value, onChange, kind, options }: { label: string; value: any; onChange: (value: any) => void; kind?: string; options?: string[] }) {
-  const style = 'w-full rounded-md border border-border-primary bg-background-primary px-2 py-1.5 text-sm text-text-primary';
-  if (options?.length) return <label className="block text-sm"><span className="mb-1 block text-text-secondary">{label}</span><select className={style} value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)}><option value="">未提供</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+function Field({ label, value, onChange, kind, options, wide }: { label: string; value: any; onChange: (value: any) => void; kind?: string; options?: string[]; wide?: boolean }) {
+  const long = wide || (typeof value === 'string' && value.length > 60) || (value !== null && typeof value === 'object');
+  const field = long ? 'ngo-field is-wide' : 'ngo-field';
+  if (options?.length) return <label className={field}><span className="ngo-field-label">{label}</span><select className="ngo-input" value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)}><option value="">未提供</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
   if (typeof value === 'boolean' || kind === 'boolean' || kind === 'bool') return (
-    <label className="block text-sm"><span className="mb-1 block text-text-secondary">{label}</span><select className={style} value={value === true ? 'yes' : value === false ? 'no' : 'unknown'} onChange={(e) => onChange(e.target.value === 'unknown' ? null : e.target.value === 'yes')}><option value="unknown">未確定</option><option value="yes">是</option><option value="no">否</option></select></label>
+    <label className={field}><span className="ngo-field-label">{label}</span><select className="ngo-input" value={value === true ? 'yes' : value === false ? 'no' : 'unknown'} onChange={(e) => onChange(e.target.value === 'unknown' ? null : e.target.value === 'yes')}><option value="unknown">未確定</option><option value="yes">是</option><option value="no">否</option></select></label>
   );
-  return <label className="block text-sm"><span className="mb-1 block text-text-secondary">{label}</span>
-    <textarea className={style} rows={typeof value === 'string' && value.length > 90 ? 3 : 1}
+  return <label className={field}><span className="ngo-field-label">{label}</span>
+    <textarea className="ngo-input" rows={typeof value === 'string' && value.length > 90 ? 3 : 1}
       value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : String(value ?? '')}
       onChange={(e) => {
         const text = e.target.value;
@@ -121,6 +170,10 @@ function Field({ label, value, onChange, kind, options }: { label: string; value
         else onChange(text);
       }} />
   </label>;
+}
+
+function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
+  return <label className="ngo-field"><span className="ngo-field-label">{label}</span><select className="ngo-input" value={value} onChange={(e) => onChange(e.target.value)}>{children}</select></label>;
 }
 
 export default function WorkflowTaskCard({ initial, append }: { initial: Data; append?: (text: string) => void }) {
@@ -134,6 +187,7 @@ export default function WorkflowTaskCard({ initial, append }: { initial: Data; a
   const [auditId, setAuditId] = useState('');
   const [auditAction, setAuditAction] = useState('approve');
   const [note, setNote] = useState('');
+  const [downloading, setDownloading] = useState('');
   const dirty = useRef(false);
   const draftRevision = useRef<string | undefined>();
   const proposal = useRef('');
@@ -199,86 +253,113 @@ export default function WorkflowTaskCard({ initial, append }: { initial: Data; a
     finally { setBusy(false); }
   }
 
-  async function download(path: string) {
+  async function download(path: string, label: string) {
+    if (downloading) return;
+    setDownloading(path); setError('');
     try {
-      const data = await request(`/api/artifacts/url?path=${encodeURIComponent(path)}`);
+      const response = await authenticatedFetch(`/api/artifacts/url?path=${encodeURIComponent(path)}`);
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 404) throw new Error(`「${label}」已無法下載：文件可能已被清除或失效。如仍需要，請在對話中要求重新匯出。`);
+      if (!response.ok || typeof data.url !== 'string' || !data.url) throw new Error(typeof data.detail === 'string' ? data.detail : `「${label}」暫時無法下載，請重試。`);
       const link = document.createElement('a'); link.href = data.url.startsWith('/') ? apiPath(data.url) : data.url;
       link.download = data.filename; link.click();
     } catch (cause) { setError(cause instanceof Error ? cause.message : '下載失敗'); }
+    finally { setDownloading(''); }
   }
 
-  return <section ref={card} className="ngo-task-card my-3 rounded-xl border border-border-primary bg-background-primary p-4" aria-label={`${NGO_TOOLS[job.tool]}任務`}>
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-      <strong>{NGO_TOOLS[job.tool]}</strong><span role="status" className="rounded-full bg-background-secondary px-3 py-1 text-xs">{states[job.state] || (job.next_operations?.includes('review') ? '待你核對' : job.state)}</span>
-    </div>
-    {job.sources?.length > 0 && <details className="mb-3" open={job.tool === 'careflow_paper_forms_to_excel'}>
-      <summary className="cursor-pointer text-sm text-text-secondary">原始附件（{job.sources.length}）</summary>
-      <div className="mt-2 flex flex-wrap gap-3">{job.sources.map((source: Data) => <SourceAttachment key={source.id} source={source} />)}</div>
+  const tone = stateTone(job.state);
+  const stateLabel = states[job.state] || (job.next_operations?.includes('review') ? '待你核對' : job.state);
+  const locked = job.state === 'exported';
+  const modelMissing = window.appConfig?.get('NGOPILOT_MODEL_CONFIGURED') === false;
+
+  return <section ref={card} className={`ngo-task is-${tone}`} aria-label={`${NGO_TOOLS[job.tool]}任務`}>
+    <header className="ngo-task-head">
+      <div className="ngo-task-heading"><p className="ngo-task-eyebrow">工作任務</p><h3>{NGO_TOOLS[job.tool]}</h3></div>
+      <span role="status" className="ngo-task-state"><i aria-hidden="true" />{stateLabel}</span>
+    </header>
+    {stateNotes[job.state] && <p className="ngo-task-note">{stateNotes[job.state]}</p>}
+    {job.sources?.length > 0 && <details className="ngo-task-disclosure" open={job.tool === 'careflow_paper_forms_to_excel'}>
+      <summary>原始附件（{job.sources.length}）</summary>
+      <div className="ngo-task-sources">{job.sources.map((source: Data) => <SourceAttachment key={source.id} source={source} />)}</div>
     </details>}
-    {job.error && <p role="alert" className="mb-3 text-red-700">{job.error.message || '工具未能完成。請修正資料後在對話中重試。'}</p>}
-    {job.warnings?.length > 0 && <details className="mb-3 text-sm"><summary>處理提示（{job.warnings.length}）</summary><ul>{job.warnings.map((warning: any, index: number) => <li key={index}>{typeof warning === 'string' ? warning : warning.message || warning.code}</li>)}</ul></details>}
-    {job.tool === 'careflow_paper_forms_to_excel' && draft.reviews?.map((review: Data, index: number) => <fieldset disabled={job.state === 'exported'} key={review.record_id} className="mb-4 grid gap-3 sm:grid-cols-2">
-      <legend className="mb-2 text-sm font-medium">第 {index + 1} 份表格 · 核對辨識內容</legend>
+    {job.error && <p role="alert" className="ngo-task-alert">{job.error.message || '工具未能完成。請修正資料後在對話中重試。'}</p>}
+    {job.warnings?.length > 0 && <details className="ngo-task-disclosure"><summary>處理提示（{job.warnings.length}）</summary><ul className="ngo-task-list">{job.warnings.map((warning: any, index: number) => <li key={index}>{typeof warning === 'string' ? warning : warning.message || warning.code}</li>)}</ul></details>}
+    {job.tool === 'careflow_paper_forms_to_excel' && draft.reviews?.map((review: Data, index: number) => <fieldset disabled={locked} key={review.record_id} className="ngo-task-fields">
+      <legend>第 {index + 1} 份表格 · 核對辨識內容</legend>
       {(result.field_schema || Object.keys(review.final_fields).map((key) => ({ key, label: key }))).map((field: Data) => <Field key={field.key} label={field.label || field.key} kind={field.type} options={field.options} value={review.final_fields[field.key]} onChange={(value) => edit({ ...draft, reviews: draft.reviews.map((item: Data, i: number) => i === index ? { ...item, final_fields: { ...item.final_fields, [field.key]: value } } : item) })} />)}
     </fieldset>)}
     {job.tool === 'careflow_meeting_notes' && <>
-      {result.transcript_snippet && <details className="mb-3 text-sm"><summary>對照轉寫原文</summary><p className="mt-2 whitespace-pre-wrap">{result.transcript_snippet}</p></details>}
-      <fieldset disabled={job.state === 'exported'} className="grid gap-3">{Object.entries(draft.slot_content_final || {}).map(([key, value]) => <Field key={key} label={result.template_contract?.dynamic_slots?.find((slot: Data) => slot.slot_id === key)?.label_hint || key} value={value} onChange={(next) => edit({ slot_content_final: { ...draft.slot_content_final, [key]: next } })} />)}</fieldset>
+      {result.transcript_snippet && <details className="ngo-task-disclosure"><summary>對照轉寫原文</summary><p className="ngo-task-source-text">{result.transcript_snippet}</p></details>}
+      <fieldset disabled={locked} className="ngo-task-fields is-single">{Object.entries(draft.slot_content_final || {}).map(([key, value]) => <Field key={key} wide label={result.template_contract?.dynamic_slots?.find((slot: Data) => slot.slot_id === key)?.label_hint || key} value={value} onChange={(next) => edit({ slot_content_final: { ...draft.slot_content_final, [key]: next } })} />)}</fieldset>
     </>}
     {job.tool === 'careflow_government_forms' && <>
-      {result.elder_profile?._extraction?.notes && <p className="mb-3 text-sm text-text-secondary">辨識備註：{result.elder_profile._extraction.notes}</p>}
-      <fieldset disabled={job.state === 'exported'} className="grid gap-3 sm:grid-cols-2">{Object.entries(draft.field_values || {}).map(([key, value]) => <Field key={key} label={result.preview?.mappings?.find((field: Data) => field.key === key)?.label_zh || key} value={value} onChange={(next) => edit({ field_values: { ...draft.field_values, [key]: next } })} />)}</fieldset>
+      {result.elder_profile?._extraction?.notes && <p className="ngo-task-meta">辨識備註：{result.elder_profile._extraction.notes}</p>}
+      <fieldset disabled={locked} className="ngo-task-fields">{Object.entries(draft.field_values || {}).map(([key, value]) => <Field key={key} label={result.preview?.mappings?.find((field: Data) => field.key === key)?.label_zh || key} value={value} onChange={(next) => edit({ field_values: { ...draft.field_values, [key]: next } })} />)}</fieldset>
     </>}
-    {isScheduler && <div className="space-y-3 text-sm">
-      <p>本次抽取 {result.activities?.length || 0} 個活動。核對日期和時間後才會產生日曆；這不會替你報名。</p>
-      {result.review_url && <div className="flex gap-4"><a className="underline" href={result.review_url} target="_blank" rel="noreferrer">對照小冊子原頁</a><a className="underline" href={result.calendar_url} target="_blank" rel="noreferrer">開啟同一批活動的月曆</a></div>}
-      {draft.reviews?.map((review: Data, index: number) => {
+    {isScheduler && <div className="ngo-task-body">
+      <p className="ngo-task-lede">本次抽取 {result.activities?.length || 0} 個活動。核對日期和時間後才會產生日曆；這不會替你報名。</p>
+      {result.review_url && <p className="ngo-task-links"><a href={result.review_url} target="_blank" rel="noreferrer">對照小冊子原頁</a><a href={result.calendar_url} target="_blank" rel="noreferrer">開啟同一批活動的月曆</a></p>}
+      <div className="ngo-task-records">{draft.reviews?.map((review: Data, index: number) => {
         const record = result.activities?.find((item: Data) => item.id === review.id);
         const update = (changes: Data) => edit({ reviews: draft.reviews.map((item: Data, i: number) => i === index ? { ...item, ...changes } : item) });
         const updateData = (changes: Data) => update({ data: { ...review.data, ...changes } });
-        return <details key={review.id} open={index === 0} className="rounded border border-border-primary p-3"><summary className="cursor-pointer font-medium">{index + 1}. {review.data.title} · 原頁 {record?.page}</summary>
-          <p className="my-2 whitespace-pre-wrap text-text-secondary">{review.data.source_text}</p>
-          {record?.issues?.length > 0 && <p className="text-amber-700">{record.issues.join('；')}</p>}
-          {review.data.source_warnings?.length > 0 && <p className="text-amber-700">來源疑點：{review.data.source_warnings.join('；')}</p>}
-          <fieldset disabled={job.state === 'exported'} className="grid gap-3 sm:grid-cols-2">
+        return <details key={review.id} open={index === 0} className="ngo-task-record"><summary><span className="ngo-task-record-n">{String(index + 1).padStart(2, '0')}</span><strong>{review.data.title}</strong><span className="ngo-task-record-meta">原頁 {record?.page}{review.status === 'excluded' ? ' · 已排除' : ''}</span></summary>
+          {review.data.source_text && <p className="ngo-task-source-text">{review.data.source_text}</p>}
+          {record?.issues?.length > 0 && <p className="ngo-task-warning">{record.issues.join('；')}</p>}
+          {review.data.source_warnings?.length > 0 && <p className="ngo-task-warning">來源疑點：{review.data.source_warnings.join('；')}</p>}
+          <fieldset disabled={locked} className="ngo-task-fields">
             <Field label="活動名稱" value={review.data.title} onChange={(title) => updateData({ title })} />
-            <Field label="日期（YYYY-MM-DD，多個日期以逗號分隔）" value={(review.data.recurrence ? record?.expanded_dates || [] : review.data.dates || []).join(', ')} onChange={(value) => updateData({ dates: value.split(',').map((date: string) => date.trim()).filter(Boolean), recurrence: null })} />
+            <Field label="日期（YYYY-MM-DD，多個以逗號分隔）" value={(review.data.recurrence ? record?.expanded_dates || [] : review.data.dates || []).join(', ')} onChange={(value) => updateData({ dates: value.split(',').map((date: string) => date.trim()).filter(Boolean), recurrence: null })} />
             <Field label="開始時間" value={review.data.start_time} onChange={(start_time) => updateData({ start_time })} />
             <Field label="結束時間" value={review.data.end_time} onChange={(end_time) => updateData({ end_time })} />
             <Field label="地點" value={review.data.location} onChange={(location) => updateData({ location })} />
             <Field label="費用（按來源）" value={review.data.fee} onChange={(fee) => updateData({ fee })} />
-            <label>名額狀態<select className="ml-2 rounded border p-1" value={review.data.availability} onChange={(e) => updateData({ availability: e.target.value })}><option value="unknown">未確定，需向中心查詢</option><option value="full">已滿</option><option value="cancelled">已取消</option></select></label>
-            <label>處理方式<select className="ml-2 rounded border p-1" value={review.status} onChange={(e) => update({ status: e.target.value })}><option value="confirmed">核對並保留</option><option value="excluded">排除此活動</option></select></label>
-            <Field label="核對說明（有來源疑點時必填）" value={review.note} onChange={(note) => update({ note })} />
+            <Select label="名額狀態" value={review.data.availability} onChange={(availability) => updateData({ availability })}><option value="unknown">未確定，需向中心查詢</option><option value="full">已滿</option><option value="cancelled">已取消</option></Select>
+            <Select label="處理方式" value={review.status} onChange={(status) => update({ status })}><option value="confirmed">核對並保留</option><option value="excluded">排除此活動</option></Select>
+            <Field wide label="核對說明（有來源疑點時必填）" value={review.note} onChange={(note) => update({ note })} />
           </fieldset>
         </details>;
-      })}
+      })}</div>
     </div>}
-    {isRoster && <div className="space-y-3 text-sm">
-      {result.base_data_label && <p className="rounded bg-background-secondary p-2">{result.base_data_label}</p>}
-      <p>目標週：{result.week_start} · 待核對項目：{pendingAudits.length} · 未安排：{result.unassigned_items?.length || 0}</p>
-      {result.export_block_reasons?.length > 0 && <p className="text-amber-700">匯出限制：{result.export_block_reasons.join('；')}</p>}
-      <details><summary className="cursor-pointer">查看排班及待處理事項</summary>
-        <div className="max-h-72 overflow-auto"><table className="w-full text-left"><thead><tr><th>日期</th><th>員工</th><th>時段</th><th>備註</th></tr></thead><tbody>{(result.version?.entries || []).map((entry: Data, index: number) => <tr key={entry.id || index}><td>{entry.schedule_date}</td><td>{entry.worker_name || entry.worker_id}</td><td>{entry.start_time}–{entry.end_time}</td><td>{entry.notes || entry.service_code}</td></tr>)}</tbody></table>
-          {(result.unassigned_items || []).map((item: Data, index: number) => <p key={index}>{item.message || item.explanation} {item.next_action}</p>)}</div>
+    {isRoster && <div className="ngo-task-body">
+      {result.base_data_label && <p className="ngo-task-callout">{result.base_data_label}</p>}
+      <dl className="ngo-task-figures"><div><dt>目標週</dt><dd>{result.week_start}</dd></div><div><dt>待核對項目</dt><dd>{pendingAudits.length}</dd></div><div><dt>未安排</dt><dd>{result.unassigned_items?.length || 0}</dd></div></dl>
+      {result.export_block_reasons?.length > 0 && <p className="ngo-task-warning">匯出限制：{result.export_block_reasons.join('；')}</p>}
+      <details className="ngo-task-disclosure"><summary>查看排班及待處理事項</summary>
+        <div className="ngo-task-table"><table><thead><tr><th>日期</th><th>員工</th><th>時段</th><th>備註</th></tr></thead><tbody>{(result.version?.entries || []).map((entry: Data, index: number) => <tr key={entry.id || index}><td>{entry.schedule_date}</td><td>{entry.worker_name || entry.worker_id}</td><td>{entry.start_time}–{entry.end_time}</td><td>{entry.notes || entry.service_code}</td></tr>)}</tbody></table>
+          {(result.unassigned_items || []).map((item: Data, index: number) => <p key={index} className="ngo-task-meta">{item.message || item.explanation} {item.next_action}</p>)}</div>
       </details>
-      {selectedAudit && <><label className="block">核對項目<select className="block w-full rounded border p-2" value={selectedAudit.id} onChange={(e) => { setAuditId(e.target.value); setSent(false); }}>
-        {pendingAudits.map((item: Data) => <option key={item.id} value={item.id}>{item.reason || item.kind}</option>)}</select></label>
-        <p>{selectedAudit.reason} {(selectedAudit.reasons || []).join?.('；')}</p>
-        <label className="block">處理方式<select className="ml-3 rounded border p-1" value={auditAction} onChange={(e) => setAuditAction(e.target.value)}><option value="approve">接受建議</option><option value="reject">拒絕建議</option></select></label>
-        <Field label="處理原因／備註" value={note} onChange={setNote} /></>}
-      <p className="text-text-secondary">這份是排班草稿。匯出不會發佈。</p>
+      {selectedAudit && <div className="ngo-task-fields">
+        <Select label="核對項目" value={selectedAudit.id} onChange={(id) => { setAuditId(id); setSent(false); }}>{pendingAudits.map((item: Data) => <option key={item.id} value={item.id}>{item.reason || item.kind}</option>)}</Select>
+        <Select label="處理方式" value={auditAction} onChange={setAuditAction}><option value="approve">接受建議</option><option value="reject">拒絕建議</option></Select>
+        <p className="ngo-task-meta is-wide">{selectedAudit.reason} {(selectedAudit.reasons || []).join?.('；')}</p>
+        <Field wide label="處理原因／備註" value={note} onChange={setNote} />
+      </div>}
+      <p className="ngo-task-meta">這份是排班草稿。匯出不會發佈。</p>
     </div>}
-    {canConfirm && <div className="mt-4 border-t border-border-primary pt-3">
-      {pendingAction && <p className="mb-3 text-amber-700">{operation === 'burn' ? '這次操作會銷毀工具保存的轉寫原件，無法復原。對話、摘要和已匯出文件仍會保留。' : '這次操作會把目前版本標記為正式發佈，留下發佈紀錄；不會自動通知員工。'}</p>}
-      <label className="block text-sm">核對人<input className="ml-3 rounded border border-border-primary bg-background-primary px-2 py-1" placeholder="填寫你的姓名" value={reviewer} onChange={(e) => setReviewer(e.target.value)} /></label>
-      {stale && <p role="alert">任務內容已更新。<button className="underline" onClick={() => { dirty.current = false; draftRevision.current = job.revision; setDraft(initialDraft(job)); }}>載入最新內容重新核對</button></p>}
-      <button className="mt-3 rounded-lg bg-text-primary px-4 py-2 text-sm text-background-primary disabled:opacity-40" disabled={!reviewer.trim() || !append || stale || window.appConfig?.get('NGOPILOT_MODEL_CONFIGURED') === false} onClick={() => void confirm()}>{pendingAction ? operation === 'burn' ? '確認銷毀此任務轉寫' : '確認發佈目前排班' : isRoster ? '確認以上排班處理' : '確認內容無誤，繼續產生文件'}</button>
-      <p className="mt-2 text-xs text-text-secondary">你可以先修改以上內容。按下確認後，Agent 才能繼續。</p>
+    {canConfirm && <div className="ngo-task-confirm">
+      {pendingAction && <p className="ngo-task-warning">{operation === 'burn' ? '這次操作會銷毀工具保存的轉寫原件，無法復原。對話、摘要和已匯出文件仍會保留。' : '這次操作會把目前版本標記為正式發佈，留下發佈紀錄；不會自動通知員工。'}</p>}
+      <div className="ngo-task-confirm-row">
+        <label className="ngo-field ngo-reviewer"><span className="ngo-field-label">核對人</span><input className="ngo-input" placeholder="填寫你的姓名" value={reviewer} onChange={(e) => setReviewer(e.target.value)} /></label>
+        <button type="button" className={`ngo-task-primary${pendingAction?.operation === 'burn' ? ' is-destructive' : ''}`} disabled={!reviewer.trim() || !append || stale || modelMissing} onClick={() => void confirm()}>{pendingAction ? operation === 'burn' ? '確認銷毀此任務轉寫' : '確認發佈目前排班' : isRoster ? '確認以上排班處理' : '確認內容無誤，繼續產生文件'}</button>
+      </div>
+      {stale && <p role="alert" className="ngo-task-warning">任務內容已更新。<button type="button" className="ngo-task-link" onClick={() => { dirty.current = false; draftRevision.current = job.revision; setDraft(initialDraft(job)); }}>載入最新內容重新核對</button></p>}
+      <p className="ngo-task-meta">{modelMissing ? '模型尚未配置，暫時無法確認。' : '你可以先修改以上內容。填寫核對人並按下確認後，Agent 才會繼續。'}</p>
     </div>}
-    {(busy || sent) && <p role="status" className="mt-3 text-sm">{busy ? '正在記錄你的確認…' : '已收到你的確認，Agent 正在繼續。'}</p>}
-    {(error || loadError) && <p role="alert" className="mt-3 text-sm text-red-700">{error || loadError}</p>}
-    {job.artifacts?.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{job.artifacts.map((artifact: Data) => <button key={artifact.path} className="rounded-lg border border-border-primary px-3 py-2 text-sm hover:bg-background-secondary" onClick={() => void download(artifact.path)}>下載 {artifact.path.split('/').pop()}</button>)}</div>}
-    {job.updated_at && <p className="mt-3 text-xs text-text-secondary">更新：{new Date(job.updated_at).toLocaleString('zh-HK')}</p>}
+    {(busy || sent) && <p role="status" className="ngo-task-progress">{busy ? '正在記錄你的確認…' : '已收到你的確認，Agent 正在繼續。'}</p>}
+    {(error || loadError) && <p role="alert" className="ngo-task-alert">{error || loadError}</p>}
+    {job.artifacts?.length > 0 && <div className="ngo-task-files">
+      <p className="ngo-task-files-title">已產生的文件</p>
+      <ul>{job.artifacts.map((artifact: Data) => {
+        const file = describeArtifact(artifact);
+        const busyFile = downloading === artifact.path;
+        return <li key={artifact.path}><button type="button" className="ngo-file" title={file.filename} aria-label={`下載${file.label}`} aria-busy={busyFile} disabled={Boolean(downloading)} onClick={() => void download(artifact.path, file.label)}>
+          <span className="ngo-file-type" aria-hidden="true">{file.ext}</span>
+          <span className="ngo-file-text"><strong>{file.label}</strong>{file.hint && <small>{file.hint}</small>}</span>
+          <span className="ngo-file-action" aria-hidden="true"><Download size={14} strokeWidth={2} />{busyFile ? '準備中…' : '下載'}</span>
+        </button></li>;
+      })}</ul>
+    </div>}
+    {job.updated_at && <p className="ngo-task-foot">更新於 {new Date(job.updated_at).toLocaleString('zh-HK', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
   </section>;
 }

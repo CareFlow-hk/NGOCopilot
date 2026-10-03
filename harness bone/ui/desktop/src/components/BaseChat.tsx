@@ -403,7 +403,7 @@ export default function BaseChat({
   return (
     <div className="ngo-conversation h-full flex flex-col min-h-0">
       <MainPanelLayout
-        backgroundColor={'bg-background-primary'}
+        backgroundColor={'bg-background-secondary'}
         removeTopPadding={true}
         {...customMainLayoutProps}
       >
@@ -489,7 +489,7 @@ export default function BaseChat({
 
         <ChatInputCard
           className={cn(
-            'relative z-10 mx-4 mb-4',
+            'ngo-conversation-composer relative z-10 mx-4 mb-4',
             !disableAnimation && 'animate-[fadein_400ms_ease-in_forwards]'
           )}
         >

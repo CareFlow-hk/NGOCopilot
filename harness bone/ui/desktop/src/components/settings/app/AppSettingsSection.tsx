@@ -8,7 +8,6 @@ import UpdateSection from './UpdateSection';
 
 import { COST_TRACKING_ENABLED, UPDATES_ENABLED } from '../../../updates';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
-import ThemeSelector from '../../GooseSidebar/ThemeSelector';
 import BlockLogoBlack from './icons/block-lockup_black.png';
 import BlockLogoWhite from './icons/block-lockup_white.png';
 import TelemetrySettings from './TelemetrySettings';
@@ -420,16 +419,6 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-lg">
-        <CardHeader className="pb-0">
-          <CardTitle className="mb-1">{intl.formatMessage(i18n.themeTitle)}</CardTitle>
-          <CardDescription>{intl.formatMessage(i18n.themeDesc)}</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-4 px-4">
-          <ThemeSelector className="w-auto" hideTitle horizontal />
         </CardContent>
       </Card>
 

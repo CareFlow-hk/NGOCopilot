@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useCallback } from 'react';
 import { applyThemeTokens, buildMcpHostStyles } from '../theme/theme-tokens';
 import type { McpUiHostStyles } from '@modelcontextprotocol/ext-apps/app-bridge';
 
@@ -14,25 +14,18 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function getSystemTheme(): ResolvedTheme {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+/**
+ * NGOPilot ships a single light paper theme. The OS colour scheme, a stored
+ * `theme: dark` preference and theme broadcasts from other windows are all
+ * ignored so every surface — including portals, native controls and MCP apps —
+ * renders against the same light tokens.
+ */
+function applyLightThemeToDocument(): void {
+  document.documentElement.classList.add('light');
+  document.documentElement.classList.remove('dark');
+  document.documentElement.style.colorScheme = 'light';
 }
 
-function resolveTheme(preference: ThemePreference): ResolvedTheme {
-  if (preference === 'system') {
-    return getSystemTheme();
-  }
-  return preference;
-}
-
-function applyThemeToDocument(theme: ResolvedTheme): void {
-  const toRemove = theme === 'dark' ? 'light' : 'dark';
-  document.documentElement.classList.add(theme);
-  document.documentElement.classList.remove(toRemove);
-  document.documentElement.style.colorScheme = theme;
-}
-
-// Built once — light-dark() values are theme-independent
 const mcpHostStyles = buildMcpHostStyles();
 
 interface ThemeProviderProps {
@@ -40,115 +33,20 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  // Start with light theme to avoid flash, will update once settings load
-  const [userThemePreference, setUserThemePreferenceState] = useState<ThemePreference>('light');
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light');
-
   useEffect(() => {
-    async function loadThemeFromSettings() {
-      try {
-        const [useSystemTheme, savedTheme] = await Promise.all([
-          window.electron.getSetting('useSystemTheme'),
-          window.electron.getSetting('theme'),
-        ]);
-
-        let preference: ThemePreference;
-        if (useSystemTheme) {
-          preference = 'system';
-        } else {
-          preference = savedTheme;
-        }
-
-        setUserThemePreferenceState(preference);
-        setResolvedTheme(resolveTheme(preference));
-      } catch (error) {
-        console.warn('[ThemeContext] Failed to load theme settings:', error);
-      }
-    }
-
-    loadThemeFromSettings();
+    applyLightThemeToDocument();
+    applyThemeTokens('light');
   }, []);
 
-  const setUserThemePreference = useCallback(async (preference: ThemePreference) => {
-    setUserThemePreferenceState(preference);
-
-    const resolved = resolveTheme(preference);
-    setResolvedTheme(resolved);
-
-    // Save to settings
-    try {
-      if (preference === 'system') {
-        await window.electron.setSetting('useSystemTheme', true);
-      } else {
-        await window.electron.setSetting('useSystemTheme', false);
-        await window.electron.setSetting('theme', preference);
-      }
-    } catch (error) {
-      console.warn('[ThemeContext] Failed to save theme settings:', error);
-    }
-
-    // Broadcast to other windows via Electron
-    window.electron?.broadcastThemeChange({
-      mode: resolved,
-      useSystemTheme: preference === 'system',
-      theme: resolved,
-    });
+  // Kept for API compatibility with existing consumers; light is the only theme.
+  const setUserThemePreference = useCallback((_preference: ThemePreference) => {
+    applyLightThemeToDocument();
   }, []);
-
-  // Listen for system theme changes when preference is 'system'
-  useEffect(() => {
-    if (userThemePreference !== 'system') return;
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-    const handleChange = () => {
-      setResolvedTheme(getSystemTheme());
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [userThemePreference]);
-
-  // Listen for theme changes from other windows (via Electron IPC)
-  useEffect(() => {
-    if (!window.electron) return;
-
-    const handleThemeChanged = (_event: unknown, ...args: unknown[]) => {
-      const themeData = args[0] as { useSystemTheme: boolean; theme: string };
-      const newPreference: ThemePreference = themeData.useSystemTheme
-        ? 'system'
-        : themeData.theme === 'dark'
-          ? 'dark'
-          : 'light';
-
-      setUserThemePreferenceState(newPreference);
-      setResolvedTheme(resolveTheme(newPreference));
-
-      // Save to settings (don't await, fire and forget)
-      if (newPreference === 'system') {
-        window.electron.setSetting('useSystemTheme', true);
-      } else {
-        window.electron.setSetting('useSystemTheme', false);
-        window.electron.setSetting('theme', newPreference);
-      }
-    };
-
-    window.electron.on('theme-changed', handleThemeChanged);
-    return () => {
-      window.electron.off('theme-changed', handleThemeChanged);
-    };
-  }, []);
-
-  // Apply theme class and CSS tokens whenever resolvedTheme changes
-  useEffect(() => {
-    applyThemeToDocument(resolvedTheme);
-    applyThemeTokens(resolvedTheme);
-  }, [resolvedTheme]);
 
   const value: ThemeContextValue = {
-    userThemePreference,
+    userThemePreference: 'light',
     setUserThemePreference,
-    resolvedTheme,
+    resolvedTheme: 'light',
     mcpHostStyles,
   };
 
