@@ -25,6 +25,8 @@ import {
   selectNextChatExtensions,
   type NextChatExtensionDraft,
 } from '../utils/nextChatExtensions';
+import { availableExamples } from './ngo/WorkflowExamples';
+import { FoundryStatus } from './ngo/FoundryStatus';
 import { LanguageSelector } from './common/LanguageSelector';
 
 const i18n = defineMessages({
@@ -63,6 +65,14 @@ export default function Hub({
   const [example, setExample] = useState('');
   const ngoHome = window.appConfig?.get('NGOPILOT_AGENT_HOME') === true;
   const { time, meridiem, hour } = useClock();
+  useEffect(() => {
+    const prefill = () => {
+      const text = sessionStorage.getItem('ngopilot.prefill');
+      if (text) { setExample(text); sessionStorage.removeItem('ngopilot.prefill'); inputRef.current?.focus(); }
+    };
+    prefill(); window.addEventListener('ngopilot:prefill', prefill);
+    return () => window.removeEventListener('ngopilot:prefill', prefill);
+  }, []);
 
   const greeting = useMemo(() => {
     if (hour < 12) return intl.formatMessage(i18n.goodMorning);
@@ -91,6 +101,7 @@ export default function Hub({
     const { msg: userMessage, images } = input;
     if (!(images.length > 0 || userMessage.trim()) || isCreatingSession) return;
 
+    if (window.appConfig?.get('NGOPILOT_MODEL_CONFIGURED') === false) return;
     setIsCreatingSession(true);
 
     try {
@@ -124,31 +135,17 @@ export default function Hub({
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 items-center justify-center px-6 relative">
-      <div className="w-full max-w-2xl">
-        <div className="mb-5 grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3 sm:grid-cols-[1fr_auto_1fr]">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <span className="text-5xl font-light text-text-primary tracking-tight tabular-nums sm:text-6xl">
-              {time}
-            </span>
-            <span className="text-xl font-light text-text-secondary sm:text-2xl">{meridiem}</span>
+    <div className={ngoHome ? "ngo-home" : "flex flex-col h-full min-h-0 items-center justify-center px-6 relative"}>
+      <div className={ngoHome ? "ngo-home-content" : "w-full max-w-2xl"}>
+        {ngoHome ? <>
+          <div className="ngo-home-heading"><div><p className="ngo-eyebrow">YOUR NGO ASSISTANT</p><h1>今天，要一起完成什麼？</h1><p>把文字、表格或圖片交給我。需要核對時，我會停下來等你。</p></div><LanguageSelector /></div>
+          <div className="ngo-examples" aria-label="試試這樣問">
+            {availableExamples().map(({ name, detail, prompt, icon: Icon }) => <button key={name} onClick={() => { setExample(prompt); inputRef.current?.focus(); }}>
+              <span className="ngo-example-icon"><Icon size={21} strokeWidth={1.7} /></span><strong>{name}</strong><span>{detail}</span>
+            </button>)}
           </div>
-
-          <span className="justify-self-end text-lg font-medium text-text-primary sm:justify-self-center">
-            NGOPilot
-          </span>
-
-          <LanguageSelector className="col-span-2 justify-self-end sm:col-span-1 sm:justify-self-end" />
-        </div>
-        <p className="mb-3 text-xl text-text-secondary">{ngoHome ? '把工作交代給我，從一句話和附件開始。' : greeting}</p>
-        {ngoHome && <>
-          <p className="mb-4 text-sm text-text-secondary">整理表格、記錄會議、填報文件、安排人手。需要核對時，我會停下來請你確認。</p>
-          <div className="mb-5 flex flex-wrap gap-2" aria-label="試試這樣問">
-            {['把這幾張探訪表格整理成 Excel', '用錄音和範本整理會議記錄', '幫我填寫長者福利申請表', '根據兩份工作表安排下週人手', ...(window.appConfig?.get('NGOPILOT_SCHEDULER_ENABLED') ? ['把活動小冊子整理成日曆'] : [])].map((prompt) => <button key={prompt}
-              className="rounded-full border border-border-primary px-3 py-2 text-xs text-text-secondary hover:bg-background-secondary"
-              onClick={() => { setExample(prompt); inputRef.current?.focus(); }}>{prompt}</button>)}
-          </div>
-        </>}
+          <FoundryStatus banner />
+        </> : <><div className="mb-5 text-5xl">{time} {meridiem}</div><p>{greeting}</p></>}
 
         <ChatInputCard>
           <ChatInput

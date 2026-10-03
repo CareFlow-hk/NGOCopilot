@@ -7,14 +7,15 @@
 | 工具 | 輸入 | 成品 |
 | --- | --- | --- |
 | 紙本表格 → Excel | 探訪表格圖片 | 已核對 Excel |
-| 會議／家訪記錄 | 錄音 + Word 範本 | Word 記錄 |
+| 會議／家訪記錄 | TXT／Markdown／DOCX 轉寫稿 + Word 範本 | Word 記錄 |
 | 政府表格填報 | 支援表格及長者資料 | PDF |
 | 人手排班 | HC 家居照顧時間表 + 護送總表 + 目標週 | 排班草稿 Excel |
 | 活動小冊子 → 日曆 | PDF + 年份 | ICS、CSV，同批活動月曆 |
 
 - [啟動、使用與備份](docs/agent-chatbot/HANDOVER.md)
 - [Opus 5.5 的產品決定](docs/agent-chatbot/opus-product-decision.md)
-- [本輪驗收證據](docs/agent-chatbot/ACCEPTANCE.md)
+- [Foundry Luna 設定與最新驗收](docs/agent-chatbot/LUNA-ATLAS.md)
+- [先前驗收證據（舊模型）](docs/agent-chatbot/ACCEPTANCE.md)
 
 Scheduler 保留旁邊的 `Careflow Scheduler` repo 及 8311 月曆介面，作為第五個獨立工具接入。Atlas 維持既有地區探訪原型，本輪沒有改動。
 

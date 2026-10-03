@@ -176,7 +176,7 @@ export default function WorkflowTaskCard({ initial, append }: { initial: Data; a
   function edit(next: Data) { dirty.current = true; setDraft(next); setSent(false); }
 
   async function confirm() {
-    if (!append || !reviewer.trim() || stale) return;
+    if (!append || !reviewer.trim() || stale || window.appConfig?.get('NGOPILOT_MODEL_CONFIGURED') === false) return;
     setBusy(true); setError('');
     try {
       let input: Data = structuredClone(draft);
@@ -207,7 +207,7 @@ export default function WorkflowTaskCard({ initial, append }: { initial: Data; a
     } catch (cause) { setError(cause instanceof Error ? cause.message : '下載失敗'); }
   }
 
-  return <section ref={card} className="my-3 rounded-xl border border-border-primary bg-background-primary p-4" aria-label={`${NGO_TOOLS[job.tool]}任務`}>
+  return <section ref={card} className="ngo-task-card my-3 rounded-xl border border-border-primary bg-background-primary p-4" aria-label={`${NGO_TOOLS[job.tool]}任務`}>
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
       <strong>{NGO_TOOLS[job.tool]}</strong><span role="status" className="rounded-full bg-background-secondary px-3 py-1 text-xs">{states[job.state] || (job.next_operations?.includes('review') ? '待你核對' : job.state)}</span>
     </div>
@@ -273,7 +273,7 @@ export default function WorkflowTaskCard({ initial, append }: { initial: Data; a
       {pendingAction && <p className="mb-3 text-amber-700">{operation === 'burn' ? '這次操作會銷毀工具保存的轉寫原件，無法復原。對話、摘要和已匯出文件仍會保留。' : '這次操作會把目前版本標記為正式發佈，留下發佈紀錄；不會自動通知員工。'}</p>}
       <label className="block text-sm">核對人<input className="ml-3 rounded border border-border-primary bg-background-primary px-2 py-1" placeholder="填寫你的姓名" value={reviewer} onChange={(e) => setReviewer(e.target.value)} /></label>
       {stale && <p role="alert">任務內容已更新。<button className="underline" onClick={() => { dirty.current = false; draftRevision.current = job.revision; setDraft(initialDraft(job)); }}>載入最新內容重新核對</button></p>}
-      <button className="mt-3 rounded-lg bg-text-primary px-4 py-2 text-sm text-background-primary disabled:opacity-40" disabled={!reviewer.trim() || !append || stale} onClick={() => void confirm()}>{pendingAction ? operation === 'burn' ? '確認銷毀此任務轉寫' : '確認發佈目前排班' : isRoster ? '確認以上排班處理' : '確認內容無誤，繼續產生文件'}</button>
+      <button className="mt-3 rounded-lg bg-text-primary px-4 py-2 text-sm text-background-primary disabled:opacity-40" disabled={!reviewer.trim() || !append || stale || window.appConfig?.get('NGOPILOT_MODEL_CONFIGURED') === false} onClick={() => void confirm()}>{pendingAction ? operation === 'burn' ? '確認銷毀此任務轉寫' : '確認發佈目前排班' : isRoster ? '確認以上排班處理' : '確認內容無誤，繼續產生文件'}</button>
       <p className="mt-2 text-xs text-text-secondary">你可以先修改以上內容。按下確認後，Agent 才能繼續。</p>
     </div>}
     {(busy || sent) && <p role="status" className="mt-3 text-sm">{busy ? '正在記錄你的確認…' : '已收到你的確認，Agent 正在繼續。'}</p>}

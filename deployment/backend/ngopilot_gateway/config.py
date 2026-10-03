@@ -26,10 +26,12 @@ class Settings(BaseSettings):
     public_api_url: str = "http://127.0.0.1:8080"
     allowed_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 
-    goose_provider: str = "openrouter"
-    goose_model: str = "moonshotai/kimi-k2.6"
-    careflow_vision_model: str = "qwen/qwen3-vl-32b-instruct"
-    openrouter_api_key: str = ""
+    goose_provider: str = "openai"
+    goose_model: str = "gpt-6-luna"
+    careflow_vision_model: str = "gpt-6-luna"
+    foundry_endpoint: str = "https://CareFlow-VPS.services.ai.azure.com/openai/v1"
+    foundry_deployment: str = "gpt-6-luna"
+    foundry_api_key: SecretStr = SecretStr("")
     ngopilot_bin: str = "ngopilot"
     ngopilot_mcp_bin: str = "ngopilot-mcp"
     ngopilot_mcp_shared_state_dir: Path = Path("/opt/ngopilot/shared")
@@ -146,7 +148,7 @@ class Settings(BaseSettings):
             service_account_json = self.gcp_service_account_json.get_secret_value()
             required = {
                 "DATABASE_URL": self.database_url,
-                "OPENROUTER_API_KEY": self.openrouter_api_key,
+                "FOUNDRY_API_KEY": self.foundry_api_key.get_secret_value(),
                 "GCS_BUCKET": self.gcs_bucket,
                 "GCP_PROJECT_ID": self.gcp_project_id,
                 "GCP_SERVICE_ACCOUNT_JSON": service_account_json,
@@ -156,10 +158,10 @@ class Settings(BaseSettings):
                 raise ValueError("missing production settings: " + ", ".join(missing))
             if self.gcp_service_account_info["project_id"] != self.gcp_project_id:
                 raise ValueError("GCP_SERVICE_ACCOUNT_JSON project_id must match GCP_PROJECT_ID")
-            if self.goose_provider != "openrouter":
-                raise ValueError("GOOSE_PROVIDER must be openrouter in production")
-            if self.goose_model != "moonshotai/kimi-k2.6":
-                raise ValueError("GOOSE_MODEL must be moonshotai/kimi-k2.6 in production")
+            if self.goose_provider != "openai":
+                raise ValueError("GOOSE_PROVIDER must be openai in production")
+            if self.goose_model != self.foundry_deployment:
+                raise ValueError("GOOSE_MODEL must match FOUNDRY_DEPLOYMENT in production")
         return self
 
     @property

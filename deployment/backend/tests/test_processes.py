@@ -43,17 +43,17 @@ def test_tenant_environment_is_isolated_and_uses_shared_runtimes(settings) -> No
     assert (workflow / "runtimes" / "rostercopiilot" / ".venv").is_symlink()
     assert (workflow / "app-data" / "careflow" / "templates" / "seed.txt").is_file()
     assert env["GOOSE_PATH_ROOT"] == str(tenant / "goose")
-    assert env["CAREFLOW_VISION_MODEL"] == "qwen/qwen3-vl-32b-instruct"
+    assert env["CAREFLOW_VISION_MODEL"] == "gpt-6-luna"
     assert env["NGOPILOT_MCP_STATE_DIR"] == str(workflow)
     assert env["NGOPILOT_MCP_ALLOWED_INPUT_ROOTS"] == str(tenant / "uploads")
 
     config = json.loads((tenant / "goose" / "config" / "config.yaml").read_text())
-    assert config["GOOSE_MODEL"] == "moonshotai/kimi-k2.6"
+    assert config["GOOSE_MODEL"] == "gpt-6-luna"
     assert config["extensions"]["ngopilot"]["cmd"] == "ngopilot-mcp"
     assert all(
         config["extensions"][name] == {"enabled": False} for name in DISABLED_CLOUD_EXTENSIONS
     )
-    assert settings.openrouter_api_key not in json.dumps(config)
+    assert settings.foundry_api_key.get_secret_value() not in json.dumps(config)
 
 
 def test_redaction_removes_runtime_secrets() -> None:

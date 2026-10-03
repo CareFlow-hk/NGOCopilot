@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { IpcRendererEvent } from 'electron';
 import { Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Menu, PanelLeft } from 'lucide-react';
+import { Footprints, Menu, PanelLeft } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
 import { Button } from '../ui/button';
 import ChatSessionsContainer from '../ChatSessionsContainer';
@@ -11,6 +11,7 @@ import { NavigationProvider, useNavigationContext } from './NavigationContext';
 import { Navigation } from './NavigationPanel';
 import { NAV_DIMENSIONS, Z_INDEX } from './constants';
 import { cn } from '../../utils';
+import { FoundryStatus } from '../ngo/FoundryStatus';
 import { UserInput } from '../../types/message';
 
 const i18n = defineMessages({
@@ -34,6 +35,7 @@ interface AppLayoutContentProps {
 
 const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) => {
   const intl = useIntl();
+  const ngoHome = window.appConfig?.get("NGOPILOT_AGENT_HOME") === true;
   const location = useLocation();
   const safeIsMacOS = (window?.electron?.platform || 'darwin') === 'darwin';
   const chatContext = useChatContext();
@@ -70,10 +72,15 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
   );
 
   return (
-    <div className="flex flex-1 w-full h-full relative animate-fade-in bg-background-primary flex-row">
+    <div className={cn("flex flex-1 w-full h-full relative animate-fade-in bg-background-primary flex-row", ngoHome && "ngo-shell")}>
+      {ngoHome && <header className="ngo-app-header">
+        <button className="ngo-nav-toggle" aria-label={navToggleTitle} onClick={() => setIsNavExpanded(!isNavExpanded)}><PanelLeft size={20} /></button>
+        <a className="ngo-brand" href="#/"><span className="ngo-brand-symbol"><Footprints size={21} strokeWidth={1.8} /></span><strong>CareFlow <span>Pilot</span></strong></a>
+        <span className="ngo-header-divider" /><span className="ngo-product-name">NGO 工作助手</span><FoundryStatus />
+      </header>}
       <div
         style={{ zIndex: Z_INDEX.HEADER }}
-        className={cn('absolute flex items-center gap-1', headerPadding, headerTop, 'ml-1.5')}
+        className={cn('absolute flex items-center gap-1', headerPadding, headerTop, 'ml-1.5', ngoHome && 'hidden')}
       >
         <Button
           onClick={() => setIsNavExpanded(!isNavExpanded)}
@@ -89,16 +96,16 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
 
       {/* Main content with navigation. Shared white canvas; the sidebar is a
           rounded outlined card floating on it with breathing room. */}
-      <div className="flex flex-1 w-full h-full min-h-0 flex-row">
+      <div className="ngo-workspace flex flex-1 w-full h-full min-h-0 flex-row">
         <motion.div
           key="nav"
           initial={false}
-          animate={{ width: isNavExpanded ? NAV_DIMENSIONS.NAV_WIDTH : 0 }}
+          animate={{ width: isNavExpanded ? (ngoHome ? 280 : NAV_DIMENSIONS.NAV_WIDTH) : 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 40 }}
           style={{ height: '100%' }}
-          className="relative flex-shrink-0 overflow-hidden h-full p-2"
+          className={cn("relative flex-shrink-0 overflow-hidden h-full", ngoHome ? "ngo-sidebar" : "p-2")}
         >
-          <div className="w-full h-full overflow-hidden rounded-xl border border-border-primary">
+          <div className={cn("w-full h-full overflow-hidden", !ngoHome && "rounded-xl border border-border-primary")}>
             <Navigation />
           </div>
         </motion.div>

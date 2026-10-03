@@ -130,11 +130,16 @@ def _dependencies() -> dict[str, Any]:
     from sqlmodel import Session
 
     # CareFlow couples its text mock patch to a missing ASR key. Reloading only
-    # this client module restores the real text functions; transcription itself
-    # remains on CareFlow's unchanged DashScope/mock path.
+    # this client module restores the real text functions. In Foundry mode,
+    # the adapter below replaces ASR with the supplied transcript reader.
     if llm_adapter.enabled:
         visit_note_llm = reload(visit_note_llm)
     llm_adapter.bind(visit_note_llm)
+    if llm_adapter.provider == "azure_foundry":
+        from .transcript_adapter import install_transcript_adapter
+        from app.services.visit_note_agent import service, transcriber
+
+        install_transcript_adapter(service, transcriber)
 
     return {
         "Session": Session,

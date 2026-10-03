@@ -7,7 +7,7 @@
 本機 **http://127.0.0.1:8310** 是 Wilson 原來的 Chatbot，使用原有 Rust Agent、ACP、MCP 和對話歷史。首頁示例只填入文字；模型自行決定工具。將附件拖入對話或按「加入附件」，以一句話描述工作。資料不足時 Agent 追問，抽取後在對話任務卡逐項核對，填核對人、按確認，Agent 才繼續產生文件。
 
 - 紙表格：JPG/PNG 探訪表格 → Excel。
-- 記錄：錄音及 DOCX 範本，說明內部會議或家訪 → Word。
+- 記錄：TXT／Markdown／DOCX 轉寫稿及獨立 DOCX 範本，說明內部會議或家訪 → Word。
 - 政府表格：先讓 Agent 列出目前支援模板，提供資料 → 預覽、核對、PDF。沒有提交到政府。
 - 人手排班：既有 HC 家居照顧時間表、護送總表、目標週 → 排班草稿。保留舊算法要求的工作表結構；不是任意 Excel 排班。
 - 活動 Scheduler：PDF 及年份 → 抽取、核對、ICS 和 CSV。卡片連結會開啟 **同一來源** 的 8311 月曆／原頁核對，不必重新上傳。額滿、取消或未核對活動不會進入匯出；日曆不是報名。
@@ -16,12 +16,10 @@
 
 ## 現有本機配置
 
-- `ngopilot-agent-local`：8310，DeepSeek Agent；文件工具使用既有 DeepSeek、Azure、DashScope 設定。
-- `ngopilot-agent-azure`：8312，已驗收的 Azure v1 備援 Agent，獨立測試資料。
+- `ngopilot-agent-local`：8310，Agent 及所有 AI 工具統一 Foundry `gpt-6-luna`，使用 Responses API；尚待管理員填 API Key。
+- 舊 8312 備援 Agent 已停止，測試資料保留。
 - Scheduler：8311，旁邊 `Careflow Scheduler` repo，保留原資料目錄。
-- 主 Agent 狀態：`.local-agent/`；Azure 備援：`.local-agent/azure-backup/`；Scheduler 狀態：其 repo 的 `.data/`。
-- 現有排班使用 **合成示範團隊**；不能把這份人員／技能／個案資料用作真實排班。實際 NGO 上線前由管理員提供 division template、經驗證的 master data 和相應原生格式工作表。
-- 模型金鑰從管理員現有 env 檔唯讀載入，沒有複製到 repo、前端或映像。工具內 AI 仍會使用已配置的外部模型；本機部署不代表 AI 離線。
+- 主 Agent 狀態：`.local-agent/`；填入 API Key 後執行 `scripts/restart-agent.sh` 並刷新頁面。Scheduler 使用同一個設定檔，每次抽取重新讀取。API Key 不會回傳到前端。詳見 [最新模型及介面驗收](LUNA-ATLAS.md)。
 
 ## 建置與啟動
 
@@ -34,15 +32,15 @@ corepack pnpm install --frozen-lockfile
 npm run typecheck
 npm run build
 cd ../..
-docker build -f deployment/backend/Local.Dockerfile -t ngopilot-agent:local .
+docker build -f deployment/backend/Local.Dockerfile -t ngopilot-agent:luna .
 ```
 
-先在 Scheduler repo 執行 `./scripts/start.sh --env-file /absolute/operator/provider.env`，再啟動 Agent：
+先在 Scheduler repo 執行 `./scripts/start.sh --env-file /Users/jiahangx/Projects/NGOPilot/.local-agent/foundry.env`，再啟動 Agent：
 
 ```sh
 NGOPILOT_ROSTER_SAMPLE=true \
 NGOPILOT_SCHEDULER_URL=http://host.docker.internal:8311 \
-scripts/start-agent.sh --env-file /absolute/operator/provider.env
+scripts/start-agent.sh --env-file /Users/jiahangx/Projects/NGOPilot/.local-agent/foundry.env
 ```
 
 `NGOPILOT_SCHEDULER_URL` 未設定時，只載入原四工具。Scheduler bridge 是本機單一工作區整合，不可指向公網或多租戶服務。`NGOPILOT_SCHEDULER_BROWSER_URL` 預設 `http://127.0.0.1:8311`。目前在 macOS Docker Desktop 實測；Linux 需另行配置 host networking，不宣稱已驗證。
@@ -64,7 +62,7 @@ Docker 服務運作時，用應用 API 或容器內的資料庫工具檢查狀�
 ## 演示順序
 
 1. 從空白 Chatbot 開始，說「把這張探訪表整理成 Excel」，上傳 `deployment/workbench/samples/form-synthetic.png`，演示人工修改和確認。
-2. 用同資料夾的合成 WAV + DOCX 產生會議記錄；展示未確認的房間預訂仍保留為未知。
+2. 用 `deployment/agent-samples/transcript-synthetic.txt` + DOCX 範本產生會議記錄；展示未確認的房間預訂仍保留為未知。
 3. 用合成姓名 TEST PERSON 產生樂悠咭預覽和 PDF；沒有真實身份資料。
 4. 用 `deployment/agent-samples/HC-synthetic.xlsx`、`Escort-synthetic.xlsx`，目標週 2026-10-05，產生排班草稿。
 5. 用 `deployment/agent-samples/activity-brochure-synthetic.pdf`、年份 2026，產生兩個活動和日曆；按卡片連結看同批資料。

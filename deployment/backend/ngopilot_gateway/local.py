@@ -44,6 +44,8 @@ UPLOAD_SUFFIXES = {
     ".flac",
     ".mp4",
     ".aac",
+    ".txt",
+    ".md",
 }
 
 
@@ -114,6 +116,8 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             "GOOSE_DEFAULT_MODEL": settings.goose_model,
             "GOOSE_WORKING_DIR": str(root),
             "NGOPILOT_LOCAL": True,
+            "NGOPILOT_MODEL_CONFIGURED": bool(os.getenv("FOUNDRY_API_KEY")),
+            "NGOPILOT_MODEL_NAME": os.getenv("FOUNDRY_DEPLOYMENT", "gpt-6-luna"),
             "NGOPILOT_AGENT_HOME": True,
             "NGOPILOT_SCHEDULER_ENABLED": bool(os.getenv("NGOPILOT_SCHEDULER_URL")),
         }
@@ -150,6 +154,16 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             ident, filename = parse_placeholder(placeholder)
             if str(ident) != upload_id or filename != file.filename:
                 raise ValueError("Upload identity mismatch")
+            if os.getenv("NGOPILOT_AI_PROVIDER") == "foundry" and Path(filename).suffix.lower() in {
+                ".wav",
+                ".mp3",
+                ".m4a",
+                ".ogg",
+                ".flac",
+                ".mp4",
+                ".aac",
+            }:
+                raise ValueError("Luna 不支援錄音轉寫。請上傳 TXT 或 DOCX 文字稿及 Word 範本。")
             if Path(filename).suffix.lower() not in UPLOAD_SUFFIXES:
                 raise ValueError("Unsupported attachment type")
         except ValueError as error:
@@ -281,6 +295,7 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         await websocket.accept()
         acquired = False
         tasks = []
+        model_requests = {}
         try:
             managed = await manager.acquire(LOCAL_OWNER)
             acquired = True
@@ -296,6 +311,20 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                         message = await websocket.receive_json()
                         if not isinstance(message, dict):
                             continue
+                        if message.get("method") == "session/prompt" and not os.getenv(
+                            "FOUNDRY_API_KEY"
+                        ):
+                            await websocket.send_json(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": message.get("id"),
+                                    "error": {
+                                        "code": -32000,
+                                        "message": "尚未配置 Foundry Luna API Key，請由管理員完成設定後重啟。",
+                                    },
+                                }
+                            )
+                            continue
                         try:
                             message = await resolve(isolate_client_request(message, root))
                         except ValueError as error:
@@ -308,11 +337,71 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                                     }
                                 )
                             continue
+                        if message.get("method") == "session/prompt":
+                            # Historical sessions retain their messages but use
+                            # the new deployment for every new model request.
+                            switch_failed = False
+                            for config_id, value in (
+                                ("provider", "openai"),
+                                ("model", settings.foundry_deployment),
+                            ):
+                                ident = "foundry-model-" + secrets.token_hex(12)
+                                ready = asyncio.get_running_loop().create_future()
+                                model_requests[ident] = ready
+                                await upstream.send(
+                                    json.dumps(
+                                        {
+                                            "jsonrpc": "2.0",
+                                            "id": ident,
+                                            "method": "session/set_config_option",
+                                            "params": {
+                                                "sessionId": message.get("params", {}).get(
+                                                    "sessionId"
+                                                ),
+                                                "configId": config_id,
+                                                "value": value,
+                                            },
+                                        }
+                                    )
+                                )
+                                try:
+                                    result = await asyncio.wait_for(ready, 30)
+                                    switch_failed = bool(result.get("error"))
+                                except TimeoutError:
+                                    switch_failed = True
+                                finally:
+                                    model_requests.pop(ident, None)
+                                if switch_failed:
+                                    break
+                            if switch_failed:
+                                await websocket.send_json(
+                                    {
+                                        "jsonrpc": "2.0",
+                                        "id": message.get("id"),
+                                        "error": {
+                                            "code": -32000,
+                                            "message": "切換 Luna 未成功，請開啟新對話；沒有沿用舊模型。",
+                                        },
+                                    }
+                                )
+                                continue
+                        if message.get("method") == "session/set_config_option":
+                            params = message.setdefault("params", {})
+                            if params.get("configId") == "model":
+                                params["value"] = settings.foundry_deployment
+                            elif params.get("configId") == "provider":
+                                params["value"] = "openai"
                         await upstream.send(json.dumps(message))
 
                 async def outbound():
                     async for raw in upstream:
-                        await websocket.send_text(browser_message(raw, json.loads(raw)))
+                        decoded = json.loads(raw)
+                        pending = model_requests.pop(decoded.get("id"), None)
+                        if pending is not None:
+                            if not pending.done():
+                                pending.set_result(decoded)
+                            continue
+                        await websocket.send_text(browser_message(raw, decoded))
 
                 tasks = [asyncio.create_task(inbound()), asyncio.create_task(outbound())]
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

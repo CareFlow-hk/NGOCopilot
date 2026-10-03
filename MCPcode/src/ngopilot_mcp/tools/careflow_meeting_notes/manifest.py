@@ -7,8 +7,8 @@ from .schemas import public_input_schema
 MANIFEST = ToolManifest(
     name="careflow_meeting_notes",
     description=(
-        "Create reviewed meeting or home-visit notes from one absolute audio "
-        "path and one absolute CareFlow DOCX template path. Continue the same "
+        "Create reviewed meeting or home-visit notes from one absolute transcript "
+        "TXT/Markdown/DOCX path (legacy field audio_path) and one separate absolute CareFlow DOCX template path. Luna does not transcribe audio. Continue the same "
         "job through status, review, export, or burn. Excludes PDFs, images, and "
         "spreadsheets. Present slot suggestions and wait for the user's explicit "
         "confirmation/corrections before review. Export only reviewed content; "

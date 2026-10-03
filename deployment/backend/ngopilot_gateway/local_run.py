@@ -15,46 +15,31 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", type=Path)
     args = parser.parse_args()
+    # Only the dedicated Foundry configuration is loaded. Old provider keys
+    # are intentionally never inherited by the Agent or tool subprocesses.
+    for key in list(os.environ):
+        if key.startswith(
+            ("DEEPSEEK_", "DASHSCOPE_", "BAILIAN_", "OPENROUTER_", "AZURE_OPENAI_", "OPENAI_")
+        ):
+            os.environ.pop(key)
     if args.env_file:
         for key, value in dotenv_values(args.env_file).items():
-            if value and key.startswith(
-                (
-                    "DEEPSEEK_",
-                    "AZURE_OPENAI_",
-                    "DASHSCOPE_",
-                    "BAILIAN_",
-                    "OPENROUTER_",
-                    "NGOPILOT_ROSTER_",
-                )
-            ):
+            if value and key.startswith(("FOUNDRY_", "NGOPILOT_ROSTER_")):
                 os.environ.setdefault(key, value)
-    # The Agent and the tools may use different providers. Neither is configured
-    # by frontline users and no model keys are sent to the browser.
-    if os.getenv("NGOPILOT_AGENT_BACKEND") == "azure":
-        # Azure's v1 endpoint is OpenAI-compatible; the legacy Azure provider
-        # appends a deployments path and api-version query which v1 rejects.
-        os.environ["GOOSE_PROVIDER"] = "openai"
-        os.environ["GOOSE_MODEL"] = os.environ["AZURE_OPENAI_DEPLOYMENT"]
-        endpoint = os.environ["AZURE_OPENAI_ENDPOINT"].rstrip("/")
-        os.environ["OPENAI_BASE_URL"] = (
-            endpoint if endpoint.endswith("/openai/v1") else endpoint + "/openai/v1"
-        )
-        os.environ["OPENAI_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
-    elif not os.getenv("GOOSE_PROVIDER"):
-        if os.getenv("OPENROUTER_API_KEY"):
-            os.environ["GOOSE_PROVIDER"] = "openrouter"
-            os.environ.setdefault("GOOSE_MODEL", "moonshotai/kimi-k2.6")
-        elif os.getenv("DEEPSEEK_API_KEY"):
-            os.environ["GOOSE_PROVIDER"] = "openai"
-            os.environ["GOOSE_MODEL"] = os.getenv("DEEPSEEK_TEXT_MODEL", "deepseek-v4-flash")
-            os.environ["OPENAI_BASE_URL"] = os.getenv(
-                "DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"
-            )
-            os.environ["OPENAI_API_KEY"] = os.environ["DEEPSEEK_API_KEY"]
-        else:
-            raise SystemExit("Operator setup required: provide an Agent provider before launching.")
-    os.environ["AZURE_OPENAI_API_VERSION"] = os.getenv(
-        "NGOPILOT_AZURE_API_VERSION", "2025-04-01-preview"
+    from ngopilot_mcp.shared.foundry import configuration
+
+    endpoint, model, api_key = configuration()
+    os.environ.update(
+        {
+            "NGOPILOT_AI_PROVIDER": "foundry",
+            "GOOSE_PROVIDER": "openai",
+            "GOOSE_MODEL": model,
+            "OPENAI_BASE_URL": endpoint,
+            "OPENAI_BASE_PATH": "v1/responses",
+            # Keeps the original Agent available for history browsing. The gateway
+            # blocks prompts until a real key exists; this value is never sent.
+            "OPENAI_API_KEY": api_key or "unconfigured",
+        }
     )
     os.environ["APP_ENV"] = "local"
     if os.getenv("NGOPILOT_ROSTER_SAMPLE") == "true":

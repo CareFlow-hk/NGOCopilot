@@ -1,3 +1,5 @@
+> 歷史驗收：以下模型呼叫在切換 Luna 前完成。2026-10-03 最新狀態見 [LUNA-ATLAS.md](LUNA-ATLAS.md)，不能將此紀錄視為 Luna 真實推理驗收。
+
 # Agent Chatbot 驗收紀錄
 
 2026-10-03。依 `opus-product-decision.md` 執行；實際 Claude Opus 5.5 作產品決定，Codex 實作。此記錄只代表本機功能驗收，不代表 NGO 採用、政府表格獲接納或比賽晉級。

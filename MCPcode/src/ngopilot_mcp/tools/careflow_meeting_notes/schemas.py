@@ -26,7 +26,10 @@ class EmptyInput(_StrictModel):
 class StartInput(_StrictModel):
     title: StrictStr = Field(min_length=1)
     mode: Literal["home_visit", "internal_meeting"]
-    audio_path: StrictStr = Field(min_length=1)
+    audio_path: StrictStr = Field(
+        min_length=1,
+        description="Absolute path to supplied TXT/Markdown/DOCX transcript. Legacy field name; in Luna mode audio files are rejected.",
+    )
     template_path: StrictStr = Field(min_length=1)
     note: StrictStr | None = None
 
@@ -94,10 +97,15 @@ REQUEST_ADAPTER = TypeAdapter(MeetingNotesRequest)
 def public_input_schema() -> dict[str, Any]:
     from ngopilot_mcp.shared.public_schema import operation_schema
 
-    return operation_schema({
-        "start": StartInput, "status": EmptyInput, "review": ReviewInput,
-        "export": EmptyInput, "burn": EmptyInput,
-    })
+    return operation_schema(
+        {
+            "start": StartInput,
+            "status": EmptyInput,
+            "review": ReviewInput,
+            "export": EmptyInput,
+            "burn": EmptyInput,
+        }
+    )
 
 
 def parse_request(value: object) -> MeetingNotesRequest:

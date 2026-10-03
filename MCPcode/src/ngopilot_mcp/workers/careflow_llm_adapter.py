@@ -82,7 +82,7 @@ class CareFlowLLMAdapter:
                     "mock",
                     "noop",
                 }:
-                    metadata["provider"] = PROVIDER_NAME
+                    metadata["provider"] = self.provider
                     requested_model = (
                         self.vision_model if kind == "vision" else self.text_model
                     )
@@ -109,6 +109,41 @@ def install_careflow_llm_adapter(
 ) -> CareFlowLLMAdapter:
     """Route CareFlow text and vision through the agent's OpenRouter client."""
     env = os.environ if environ is None else environ
+    if env.get("NGOPILOT_AI_PROVIDER") == "foundry":
+        from ngopilot_mcp.shared.foundry import FoundryClient, configuration
+
+        endpoint, model, _ = configuration(env)
+        client = FoundryClient(
+            environ=env, client=client_factory() if client_factory else None
+        )
+        get_client = lambda: client
+        resolve = lambda kind: model
+        client_module.get_text_client = get_client
+        client_module.get_vision_client = get_client
+        client_module.get_client = lambda provider=None: client
+        client_module.resolve_model = resolve
+        for key in ("deepseek_api_key", "azure_openai_api_key"):
+            setattr(settings, key, _READINESS_SENTINEL)
+        settings.azure_openai_endpoint = endpoint
+        for key in (
+            "deepseek_text_model",
+            "openai_vision_model",
+            "azure_openai_model",
+            "azure_openai_deployment",
+            "llm_text_model",
+            "llm_vision_model",
+        ):
+            setattr(settings, key, model)
+        adapter = CareFlowLLMAdapter(
+            enabled=True,
+            text_model=model,
+            vision_model=model,
+            get_text_client=get_client,
+            get_vision_client=get_client,
+            resolve_model=resolve,
+        )
+        adapter.provider = "azure_foundry"
+        return adapter
     api_key = env.get("OPENROUTER_API_KEY", "").strip()
     text_model = env.get("GOOSE_MODEL", "").strip() or DEFAULT_OPENROUTER_TEXT_MODEL
     vision_model = (

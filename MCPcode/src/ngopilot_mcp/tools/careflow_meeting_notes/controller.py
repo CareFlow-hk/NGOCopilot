@@ -82,7 +82,13 @@ class MeetingNotesController:
                 role="audio",
                 source_path=audio_path,
                 allowed_extensions=tuple(sorted(AUDIO_EXTENSIONS)),
-                content_kind="audio",
+                content_kind=(
+                    "office_zip"
+                    if audio_path.suffix.lower() == ".docx"
+                    else None
+                    if audio_path.suffix.lower() in {".txt", ".md"}
+                    else "audio"
+                ),
             )
             staged_template = runtime.stage_file(
                 job=job,

@@ -292,6 +292,31 @@ class TenantProcessManager:
             )
 
         env = os.environ.copy()
+        for key in list(env):
+            if key.startswith(
+                ("DEEPSEEK_", "DASHSCOPE_", "BAILIAN_", "OPENROUTER_", "AZURE_OPENAI_", "OPENAI_")
+            ):
+                env.pop(key)
+        from ngopilot_mcp.shared.foundry import configuration
+
+        endpoint, model, api_key = configuration(
+            {
+                "FOUNDRY_ENDPOINT": self.settings.foundry_endpoint,
+                "FOUNDRY_DEPLOYMENT": self.settings.foundry_deployment,
+                "FOUNDRY_API_KEY": self.settings.foundry_api_key.get_secret_value(),
+            }
+        )
+        env.update(
+            {
+                "NGOPILOT_AI_PROVIDER": "foundry",
+                "FOUNDRY_ENDPOINT": endpoint,
+                "FOUNDRY_DEPLOYMENT": model,
+                "FOUNDRY_API_KEY": api_key,
+                "OPENAI_BASE_URL": endpoint,
+                "OPENAI_BASE_PATH": "v1/responses",
+                "OPENAI_API_KEY": api_key or "unconfigured",
+            }
+        )
         env.update(
             {
                 "GOOSE_PATH_ROOT": str(goose_root),
@@ -299,7 +324,6 @@ class TenantProcessManager:
                 "GOOSE_MODEL": self.settings.goose_model,
                 "CAREFLOW_VISION_MODEL": self.settings.careflow_vision_model,
                 "GOOSE_DISABLE_KEYRING": "true",
-                "OPENROUTER_API_KEY": self.settings.openrouter_api_key,
                 "NGOPILOT_MCP_STATE_DIR": str(workflow_root),
                 "NGOPILOT_MCP_ALLOWED_INPUT_ROOTS": str(uploads_root),
                 "NGOPILOT_MCP_REQUIRE_HUMAN_CONFIRMATION": "true",
@@ -374,7 +398,7 @@ class TenantProcessManager:
                     _redact(
                         line.decode("utf-8", errors="replace").rstrip()[:2000],
                         managed.secret,
-                        self.settings.openrouter_api_key,
+                        self.settings.foundry_api_key.get_secret_value(),
                         *(
                             value
                             for key, value in os.environ.items()

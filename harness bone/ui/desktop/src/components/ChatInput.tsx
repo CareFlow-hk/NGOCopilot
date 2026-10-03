@@ -1134,6 +1134,7 @@ export default function ChatInput({
 
   const performSubmit = useCallback(
     (text?: string) => {
+      if (window.appConfig?.get("NGOPILOT_MODEL_CONFIGURED") === false) return;
       const imageData = convertImagesToImageData();
       const textToSend = appendLocalAttachments(text ?? displayValue.trim());
 
@@ -1432,6 +1433,7 @@ export default function ChatInput({
   const isAnyDroppedFileLoading = allDroppedFiles.some((file) => file.isLoading);
 
   const isSubmitButtonDisabled =
+    window.appConfig?.get("NGOPILOT_MODEL_CONFIGURED") === false ||
     !hasSubmittableContent ||
     isAnyImageLoading ||
     isAnyDroppedFileLoading ||
@@ -1441,6 +1443,7 @@ export default function ChatInput({
     chatState === ChatState.RestartingAgent;
 
   const getSubmitButtonTooltip = (): string => {
+    if (window.appConfig?.get("NGOPILOT_MODEL_CONFIGURED") === false) return "請先完成 Foundry 模型設定";
     if (queueProcessingBlocked) return intl.formatMessage(i18n.waitingForCancellation);
     if (isAnyImageLoading) return intl.formatMessage(i18n.waitingForImages);
     if (isAnyDroppedFileLoading) return intl.formatMessage(i18n.processingDroppedFiles);
@@ -1871,7 +1874,7 @@ export default function ChatInput({
         )}
 
         {/* Right: mic — ghost icon, no background when idle */}
-        {dictationProvider && (
+        {dictationProvider && !window.appConfig?.get("NGOPILOT_AGENT_HOME") && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;550;600;650;700&family=Noto+Sans+TC:wght@400;500;550;600;650;700&display=swap');
 /* ═══════════════════════════════════════════════════════════
    1. TAILWIND IMPORTS & CONFIG
    ═══════════════════════════════════════════════════════════ */
@@ -25,32 +26,32 @@
   --shadow-*: initial;
 
   /* Shared archival palette from the CareFlow and RosterCopiilot frontends. */
-  --color-paper-50: #fcfaf3;
-  --color-paper-100: #f8f3e8;
-  --color-paper-150: #f3ecdd;
-  --color-paper-200: #efe7d3;
-  --color-paper-300: #dccfb0;
-  --color-paper-400: #a99b7a;
-  --color-paper-500: #7a6e51;
+  --color-paper-50: #ffffff;
+  --color-paper-100: #f6f8f6;
+  --color-paper-150: #f0f5f2;
+  --color-paper-200: #e9f2ed;
+  --color-paper-300: #dfe7e2;
+  --color-paper-400: #80948a;
+  --color-paper-500: #5e746b;
 
-  --color-ink-50: #f7f5f0;
-  --color-ink-100: #e8e3d7;
-  --color-ink-400: #5a544a;
-  --color-ink-500: #3d3933;
-  --color-ink-700: #1f1c18;
-  --color-ink-900: #0e0c0a;
+  --color-ink-50: #f6f8f6;
+  --color-ink-100: #dfe7e2;
+  --color-ink-400: #5e746b;
+  --color-ink-500: #34564a;
+  --color-ink-700: #193b34;
+  --color-ink-900: #102b25;
 
   --color-cinnabar-50: #fbeae5;
   --color-cinnabar-100: #f5c8bb;
-  --color-cinnabar-400: #c75a3f;
-  --color-cinnabar-500: #a8412c;
-  --color-cinnabar-600: #8a3120;
+  --color-cinnabar-400: #287c69;
+  --color-cinnabar-500: #126455;
+  --color-cinnabar-600: #0b5144;
   --color-cinnabar-700: #6b2419;
 
   --color-sage-50: #eef2ec;
   --color-sage-100: #d6e0d1;
-  --color-sage-500: #4a6c5d;
-  --color-sage-700: #2e4639;
+  --color-sage-500: #126455;
+  --color-sage-700: #0b5144;
 
   --color-amber-ink-50: #faf2dc;
   --color-amber-ink-500: #a8841f;
@@ -726,20 +727,20 @@ pre:has(> code.bg-inline-code) {
 }
 
 .dark .user-message-bubble {
-  background-color: #1f1c18;
-  color: #efe7d3;
+  background-color: #193b34;
+  color: #e9f2ed;
 }
 
 .dark .user-message :is(h1, h2, h3, h4, h5, h6, strong) {
-  color: #fcfaf3 !important;
+  color: #ffffff !important;
 }
 
 .dark .user-message li {
-  color: #dccfb0 !important;
+  color: #dfe7e2 !important;
 }
 
 .dark .user-message li::marker {
-  color: #a99b7a;
+  color: #80948a;
 }
 
 .dark .user-message a {
@@ -751,7 +752,7 @@ pre:has(> code.bg-inline-code) {
 }
 
 .dark .agent-message-bubble {
-  background-color: #1f1c18;
+  background-color: #193b34;
   border-radius: 0.75rem;
   padding: 0.625rem 1rem;
 }
@@ -993,7 +994,7 @@ pre:has(> code.bg-inline-code) {
 }
 
 .dark .katex-display .katex {
-  color: #efe7d3;
+  color: #e9f2ed;
 }
 
 .katex-error {
@@ -1101,4 +1102,83 @@ pre:has(> code.bg-inline-code) {
 
 .mcp-app-container.mcp-enter-inline {
   animation: mcp-enter-inline 180ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* Atlas 8127ef3 + current refinement.css: same product family, original Agent. */
+.ngo-shell { flex-direction: column; background: #f6f8f6; color: #193b34; font-family: 'DM Sans', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 15px; }
+.ngo-shell button { transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out; }
+.ngo-shell :is(button,a,input,select,textarea):focus-visible { outline: 2px solid #946414; outline-offset: 3px; }
+.ngo-app-header { height: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 18px; padding: 0 26px; background: #fff; border-bottom: 1px solid #dfe7e2; z-index: 101; }
+.ngo-nav-toggle { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; color: #5e746b; }
+.ngo-nav-toggle:hover { background: #e9f2ed; }
+.ngo-brand { display: flex; align-items: center; gap: 11px; text-decoration: none; white-space: nowrap; }
+.ngo-brand-symbol { width: 33px; height: 37px; border-radius: 10px; background: #126455; color: white; display: grid; place-items: center; transform: rotate(-5deg); }
+.ngo-brand-symbol svg { transform: rotate(5deg); }
+.ngo-brand strong { font-size: 21px; font-weight: 650; letter-spacing: -.7px; }
+.ngo-brand strong span { margin-left: 4px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: #62766b; }
+.ngo-header-divider { height: 22px; width: 1px; background: #dfe7e2; }
+.ngo-product-name { font-size: 14px; color: #62766b; letter-spacing: .04em; }
+.ngo-model-status { margin-left: auto; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 13px; border: 1px solid #dfe7e2; border-radius: 8px; font-size: 13px; color: #365e4e; background: #f7faf8; }
+.ngo-model-status.is-pending { background: #fffaf0; border-color: #eadbbd; color: #805f28; }
+.ngo-status-dot { height: 6px; width: 6px; border-radius: 50%; background: currentColor; }
+.ngo-workspace { height: calc(100% - 72px); }
+.ngo-sidebar { background: white; border-right: 1px solid #dfe7e2; }
+.ngo-sidebar button { min-height: 44px; border-radius: 8px; }
+.ngo-sidebar button:has(>span:first-of-type) { font-size: 14px; }
+.ngo-sidebar [aria-label="新對話"], .ngo-sidebar button:first-child:has(svg + span) { border-radius: 8px; }
+.ngo-sidebar-tools { padding: 22px 16px 14px; border-bottom: 1px solid #e5ebe7; }
+.ngo-sidebar-tools button { display: flex; align-items: center; gap: 11px; width: 100%; padding: 0 12px; color: #466455; text-align: left; font-size: 14px; }
+.ngo-sidebar-tools button:hover { background: #e9f2ed; color: #126455; }
+.ngo-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .09em; color: #65796e; margin: 0 0 12px; }
+.ngo-sidebar-tools .ngo-eyebrow { padding-left: 12px; }
+.ngo-home { height: 100%; min-height: 0; overflow-y: auto; display: flex; justify-content: center; padding: clamp(32px, 7vh, 88px) 36px 32px; background: #f6f8f6; }
+.ngo-home-content { width: 100%; max-width: 820px; margin: auto 0; }
+.ngo-home-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 30px; }
+.ngo-home-heading h1 { font-size: clamp(25px, 2.5vw, 34px); letter-spacing: -.035em; font-weight: 550; margin: 0 0 14px; line-height: 1.45; }
+.ngo-home-heading p:not(.ngo-eyebrow) { font-size: 14px; color: #5e746b; line-height: 1.85; margin: 0; }
+.ngo-examples { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-bottom: 28px; }
+.ngo-examples button { min-height: 122px; padding: 18px; text-align: left; background: white; border: 1px solid #dfe7e2; border-radius: 10px; display: flex; flex-direction: column; align-items: flex-start; }
+.ngo-examples button:hover { border-color: #7fa991; background: #fbfdfb; box-shadow: 0 3px 12px #163f3008; }
+.ngo-example-icon { color: #126455; margin-bottom: 13px; }
+.ngo-examples strong { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.ngo-examples button > span:last-child { color: #5e746b; font-size: 12px; line-height: 1.7; }
+.ngo-setup-notice { display: flex; gap: 20px; justify-content: space-between; align-items: center; padding: 15px 17px; border: 1px solid #eadbbd; background: #fffaf0; color: #72582b; border-radius: 8px; margin-bottom: 16px; }
+.ngo-setup-notice strong { font-size: 13px; font-weight: 600; }
+.ngo-setup-notice p { font-size: 12px; line-height: 1.7; margin: 4px 0 0; }
+.ngo-setup-notice button { min-height: 44px; flex-shrink: 0; font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
+.ngo-shell .ngo-composer { border-radius: 10px; border-color: #c9d9cf; background: white; box-shadow: 0 4px 18px #163f3005; }
+.ngo-shell .ngo-composer:focus-within { border-color: #508969; box-shadow: 0 0 0 3px #1264550b; }
+.ngo-shell .ngo-composer textarea { font-family: inherit; font-size: 15px; line-height: 1.8; min-height: 90px; }
+.ngo-shell .ngo-composer button { min-height: 44px; min-width: 44px; }
+.ngo-shell .ngo-composer button[aria-label="Send"]:not(:disabled) { background: #126455; color: white; }
+.ngo-task-card { border-radius: 10px; border-color: #dfe7e2; background: white; padding: 22px; box-shadow: 0 2px 8px #163f3005; }
+.ngo-task-card > div:first-child { padding-bottom: 14px; border-bottom: 1px solid #e5ebe7; margin-bottom: 16px; }
+.ngo-task-card :is(input,textarea,select) { min-height: 44px; border-radius: 8px; border-color: #c9d9cf; padding: 10px; font-size: 14px; background: white; }
+.ngo-task-card :is(input,textarea,select):disabled { background: #f6f8f6; color: #526b60; opacity: 1; }
+.ngo-task-card button { min-height: 44px; border-radius: 8px; }
+.ngo-task-card button.bg-text-primary { background: #126455; color: white; }
+.ngo-task-card [role="status"] { padding: 5px 9px; border-radius: 5px; background: #e9f2ed; color: #126455; font-size: 12px; }
+.ngo-config-dialog { margin: auto; max-width: 540px; width: calc(100% - 36px); border: 1px solid #dfe7e2; border-radius: 14px; padding: 26px; color: #193b34; background: white; box-shadow: 0 20px 80px #112c2730; }
+.ngo-config-dialog::backdrop { background: #112c277a; backdrop-filter: blur(3px); }
+.ngo-dialog-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.ngo-dialog-title h2 { font-size: 21px; font-weight: 600; }
+.ngo-dialog-title button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; }
+.ngo-config-dialog p { line-height: 1.85; font-size: 14px; color: #5e746b; margin: 14px 0; }
+.ngo-config-dialog dl { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 14px; background: #f6f8f6; padding: 18px; border-radius: 8px; font-size: 13px; }
+.ngo-config-dialog dd { margin: 0; overflow-wrap: anywhere; }
+.ngo-primary-button { min-height: 44px; border-radius: 8px; padding: 0 20px; background: #126455; color: white; }
+.ngo-primary-button:hover { background: #0b5144; }
+@media (max-width: 1000px) { .ngo-examples { grid-template-columns: repeat(2,minmax(0,1fr)); } .ngo-home { padding: 28px 24px; } .ngo-home-heading { flex-wrap: wrap; } }
+@media (max-width: 700px) { .ngo-sidebar { max-width: 220px; } .ngo-app-header { padding: 0 12px; gap: 8px; } .ngo-product-name,.ngo-header-divider,.ngo-model-detail { display: none; } .ngo-brand strong { font-size: 18px; } .ngo-home { padding: 24px 16px; } .ngo-examples { grid-template-columns: 1fr; } .ngo-examples button { min-height: 90px; } .ngo-setup-notice { align-items: flex-start; flex-direction: column; gap: 6px; } }
+@media (prefers-reduced-motion: reduce) { .ngo-shell * { transition: none !important; animation: none !important; } }
+
+@media (min-width: 1001px) and (max-height: 800px) {
+  .ngo-home { padding-top: 24px; padding-bottom: 24px; }
+  .ngo-home-heading { margin-bottom: 18px; }
+  .ngo-home-heading h1 { margin-bottom: 8px; }
+  .ngo-examples { margin-bottom: 18px; }
+  .ngo-examples button { min-height: 100px; padding: 13px 16px; }
+  .ngo-example-icon { margin-bottom: 7px; }
+  .ngo-setup-notice { padding-top: 10px; padding-bottom: 10px; }
+  .ngo-shell .ngo-composer textarea { min-height: 64px; }
 }

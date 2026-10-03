@@ -13,7 +13,7 @@ test -f "$repo_root/deployment/frontend/dist/index.html" || {
   echo "Build deployment/frontend with Node 24 and npm run build first." >&2; exit 1;
 }
 agent_port=${NGOPILOT_LOCAL_PORT:-8310}
-agent_image=${NGOPILOT_LOCAL_IMAGE:-ngopilot-agent:local}
+agent_image=${NGOPILOT_LOCAL_IMAGE:-ngopilot-agent:luna}
 agent_name=${NGOPILOT_LOCAL_CONTAINER:-ngopilot-agent-local}
 agent_data=${NGOPILOT_LOCAL_DATA_DIR:-$repo_root/.local-agent}
 mkdir -p "$agent_data"
@@ -29,7 +29,6 @@ docker run -d --name "$agent_name" --restart unless-stopped \
   --mount "type=bind,src=$provider_file,dst=/run/ngopilot-provider.env,readonly" \
   -e "PORT=$agent_port" -e "PUBLIC_API_URL=http://127.0.0.1:$agent_port" \
   -e MAX_UPLOAD_BYTES=104857600 \
-  -e "NGOPILOT_AGENT_BACKEND=${NGOPILOT_AGENT_BACKEND:-default}" \
   -e "NGOPILOT_ROSTER_SAMPLE=${NGOPILOT_ROSTER_SAMPLE:-false}" \
   -e "NGOPILOT_SCHEDULER_URL=${NGOPILOT_SCHEDULER_URL:-}" \
   -e "NGOPILOT_SCHEDULER_BROWSER_URL=${NGOPILOT_SCHEDULER_BROWSER_URL:-http://127.0.0.1:8311}" \

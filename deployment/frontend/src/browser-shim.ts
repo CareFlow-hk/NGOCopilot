@@ -38,9 +38,9 @@ function writeSettings(settings: Record<string, unknown>): void {
 }
 
 const appConfig: Record<string, unknown> = {
-  GOOSE_DEFAULT_PROVIDER: import.meta.env.VITE_GOOSE_DEFAULT_PROVIDER || "openrouter",
+  GOOSE_DEFAULT_PROVIDER: import.meta.env.VITE_GOOSE_DEFAULT_PROVIDER || "openai",
   GOOSE_DEFAULT_MODEL:
-    import.meta.env.VITE_GOOSE_DEFAULT_MODEL || "moonshotai/kimi-k2.6",
+    import.meta.env.VITE_GOOSE_DEFAULT_MODEL || "gpt-6-luna",
   GOOSE_PREDEFINED_MODELS: import.meta.env.VITE_GOOSE_PREDEFINED_MODELS || undefined,
   GOOSE_WORKING_DIR: import.meta.env.VITE_GOOSE_WORKING_DIR || "",
   GOOSE_PATH_ROOT: "",
@@ -48,6 +48,8 @@ const appConfig: Record<string, unknown> = {
   GOOSE_DISABLE_NOSTR_SHARING: true,
   GOOSE_VERSION: "1.45.0",
   NGOPILOT_CLOUD: true,
+  NGOPILOT_MODEL_CONFIGURED: false,
+  NGOPILOT_MODEL_NAME: "gpt-6-luna",
   NGOPILOT_API_URL: import.meta.env.VITE_API_URL || "",
 };
 
@@ -139,7 +141,7 @@ function uploadFile(file: File): string {
 }
 
 export function installBrowserShim(runtime: Record<string, unknown> = {}): void {
-  for (const key of ["GOOSE_DEFAULT_PROVIDER", "GOOSE_DEFAULT_MODEL", "GOOSE_WORKING_DIR", "NGOPILOT_LOCAL", "NGOPILOT_AGENT_HOME", "NGOPILOT_SCHEDULER_ENABLED"]) {
+  for (const key of ["GOOSE_DEFAULT_PROVIDER", "GOOSE_DEFAULT_MODEL", "GOOSE_WORKING_DIR", "NGOPILOT_LOCAL", "NGOPILOT_AGENT_HOME", "NGOPILOT_SCHEDULER_ENABLED", "NGOPILOT_MODEL_CONFIGURED", "NGOPILOT_MODEL_NAME"]) {
     if (key in runtime) appConfig[key] = runtime[key];
   }
   const listeners = new Map<string, Set<Listener>>();

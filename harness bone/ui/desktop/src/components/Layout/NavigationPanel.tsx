@@ -1,3 +1,4 @@
+import { availableExamples } from '../ngo/WorkflowExamples';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, Trash2 } from 'lucide-react';
@@ -325,7 +326,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
       transition={{ duration: 0.15 }}
       className={cn('bg-background-primary outline-none flex flex-col h-full', className)}
     >
-      <div className="h-[48px] no-drag" />
+      <div className={window.appConfig?.get("NGOPILOT_AGENT_HOME") ? "h-5" : "h-[48px] no-drag"} />
 
       <div className="px-2 flex flex-col gap-0.5">
         {visibleItems.map((item) => (
@@ -338,6 +339,9 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
         ))}
       </div>
 
+      {window.appConfig?.get('NGOPILOT_AGENT_HOME') && <div className="ngo-sidebar-tools"><p className="ngo-eyebrow">可以幫你做</p>{availableExamples().map(({ name, prompt, icon: Icon }) => <button key={name} onClick={() => {
+        sessionStorage.setItem('ngopilot.prefill', prompt); handleNavClick('/'); window.dispatchEvent(new Event('ngopilot:prefill'));
+      }}><Icon size={18} strokeWidth={1.7} />{name}</button>)}</div>}
       <div className="flex-1 min-h-0 flex flex-col mt-3">
         <button
           onClick={() => setIsChatsExpanded((v) => !v)}
@@ -348,7 +352,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
           ) : (
             <ChevronRight className="w-3 h-3" />
           )}
-          <span>{intl.formatMessage(i18n.chats)}</span>
+          <span>{window.appConfig?.get("NGOPILOT_AGENT_HOME") ? "最近對話" : intl.formatMessage(i18n.chats)}</span>
         </button>
         {isChatsExpanded && (
           <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 mt-1">

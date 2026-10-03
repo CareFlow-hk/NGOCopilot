@@ -146,7 +146,9 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
     async def runtime_config():
         return {"GOOSE_DEFAULT_PROVIDER": app_settings.goose_provider,
                 "GOOSE_DEFAULT_MODEL": app_settings.goose_model,
-                "NGOPILOT_AGENT_HOME": True}
+                "NGOPILOT_AGENT_HOME": True,
+                "NGOPILOT_MODEL_CONFIGURED": bool(app_settings.foundry_api_key.get_secret_value()),
+                "NGOPILOT_MODEL_NAME": app_settings.foundry_deployment}
 
     @app.middleware("http")
     async def response_headers(request: Request, call_next):
@@ -171,7 +173,7 @@ def create_app(settings_override: Settings | None = None) -> FastAPI:
             "agent_binary": executable_available(app_settings.ngopilot_bin),
             "mcp_binary": executable_available(app_settings.ngopilot_mcp_bin),
             "shared_mcp_assets": request.app.state.processes.shared_assets_available(),
-            "model_key": bool(app_settings.openrouter_api_key),
+            "model_key": bool(app_settings.foundry_api_key.get_secret_value()),
             "object_storage": False,
         }
         try:

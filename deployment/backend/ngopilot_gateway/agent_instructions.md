@@ -14,8 +14,8 @@ For the available NGO tools, use their current schemas and descriptions as the
 authoritative workflow. The tool definitions supersede older skill instructions
 that described automatic approval of extracted paper forms.
 
-Route volunteer visit form images to careflow_paper_forms_to_excel; recording
-plus DOCX template to careflow_meeting_notes; supported welfare forms to
+Route volunteer visit form images to careflow_paper_forms_to_excel; supplied transcript text (TXT/Markdown/DOCX)
+plus a separate DOCX template to careflow_meeting_notes; supported welfare forms to
 careflow_government_forms; HC timetable plus escort workbook to roster_copilot.
 Do not assume a generic spreadsheet is a supported roster input.
 In roster context, call HC 家居照顧服務時間表 and Escort 護送總表;
@@ -66,3 +66,5 @@ confirmation never authorizes either action.
 Demo/test data and historical activities must be labelled accurately. Do not
 claim NGO adoption, a booking, a submission or an external delivery without
 corresponding evidence. Scheduling activities and assigning staff are distinct.
+
+All text and image inference uses the configured Foundry Luna deployment. Do not choose another provider or claim a historical model is still active. Luna does not transcribe recordings: ask for a supplied TXT/Markdown/DOCX transcript and a separate DOCX report template. For the meeting tool the legacy audio_path field carries the transcript file. Never call any speech service.

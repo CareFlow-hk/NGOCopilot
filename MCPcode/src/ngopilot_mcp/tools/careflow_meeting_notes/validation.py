@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
 from .schemas import StartInput
 
-AUDIO_EXTENSIONS = frozenset({".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"})
+AUDIO_EXTENSIONS = frozenset(
+    {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".txt", ".md", ".docx"}
+)
 TEMPLATE_EXTENSIONS = frozenset({".docx", ".doc"})
 
 
 def validate_start_files(value: StartInput) -> tuple[Path, Path]:
+    if os.getenv("NGOPILOT_AI_PROVIDER") == "foundry" and Path(
+        value.audio_path
+    ).suffix.lower() not in {".txt", ".md", ".docx"}:
+        raise ValueError("Luna 不支援錄音轉寫。請上傳 TXT 或 DOCX 文字稿及 Word 範本。")
     audio = _validate_local_file(
         value.audio_path,
         role="audio_path",

@@ -15,6 +15,6 @@ def settings(tmp_path: Path) -> Settings:
         public_api_url="http://127.0.0.1:8080",
         allowed_origins="http://127.0.0.1:4173",
         database_url="postgresql://unused",
-        openrouter_api_key="test-model-key",
+        foundry_api_key="test-model-key",
         ngopilot_mcp_shared_state_dir=tmp_path / "shared",
     )
