@@ -4,7 +4,7 @@
 
 ## 使用
 
-本機 **http://127.0.0.1:8310** 是 Wilson 原來的 Chatbot，使用原有 Rust Agent、ACP、MCP 和對話歷史。首頁示例只填入文字；模型自行決定工具。將附件拖入對話或按「加入附件」，以一句話描述工作。資料不足時 Agent 追問，抽取後在對話任務卡逐項核對，填核對人、按確認，Agent 才繼續產生文件。
+本機 **http://127.0.0.1:8310** 是 Wilson 原來的 Chatbot，需以機構帳號登入（管理員邀請，見 [帳號系統](ACCOUNTS.md)）；使用原有 Rust Agent、ACP、MCP 和對話歷史。首頁示例只填入文字；模型自行決定工具。將附件拖入對話或按「加入附件」，以一句話描述工作。資料不足時 Agent 追問，抽取後在對話任務卡逐項核對，填核對人、按確認，Agent 才繼續產生文件。
 
 - 紙表格：JPG/PNG 探訪表格 → Excel。
 - 記錄：TXT／Markdown／DOCX 轉寫稿及獨立 DOCX 範本，說明內部會議或家訪 → Word。
@@ -53,7 +53,7 @@ Azure 備援：`NGOPILOT_AGENT_BACKEND=azure`，另設 `NGOPILOT_LOCAL_PORT=8312
 
 ## 備份及限制
 
-停止寫入後完整備份 `.local-agent/` 及 Scheduler `.data/`；包含附件、原生資料庫、MCP 任務／核對授權、生成文件和對話。模型 env 檔另由管理員保管。恢復到新資料目錄，以 `NGOPILOT_LOCAL_DATA_DIR`／`SCHEDULER_DATA_DIR` 指向它，不要覆蓋唯一備份。
+停止寫入後完整備份 `.local-agent/` 及 Scheduler `.data/`；包含帳號庫 `accounts.sqlite3`（密碼雜湊、電郵，屬敏感資料）、附件、原生資料庫、MCP 任務／核對授權、生成文件和對話。模型 env 檔另由管理員保管。恢復到新資料目錄，以 `NGOPILOT_LOCAL_DATA_DIR`／`SCHEDULER_DATA_DIR` 指向它，不要覆蓋唯一備份。
 
 Docker 服務運作時，用應用 API 或容器內的資料庫工具檢查狀態；不要同時從 macOS 主機直接打開掛載中的 SQLite 檔案。跨主機／VM 的 WAL 共享記憶體不安全。備份前先停服務。
 

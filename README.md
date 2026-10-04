@@ -13,6 +13,7 @@
 | 活動小冊子 → 日曆 | PDF + 年份 | ICS、CSV，同批活動月曆 |
 
 - [啟動、使用與備份](docs/agent-chatbot/HANDOVER.md)
+- [機構帳號（參考 Atlas）](docs/agent-chatbot/ACCOUNTS.md)
 - [Opus 5.5 的產品決定](docs/agent-chatbot/opus-product-decision.md)
 - [Foundry Luna 設定與最新驗收](docs/agent-chatbot/LUNA-ATLAS.md)
 - [先前驗收證據（舊模型）](docs/agent-chatbot/ACCEPTANCE.md)

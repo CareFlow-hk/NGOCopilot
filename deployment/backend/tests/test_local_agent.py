@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from ngopilot_gateway.config import Settings
 from ngopilot_gateway.local import LOCAL_OWNER, create_local_app
 
+PASSWORD = "correct horse battery staple"
+
 
 @pytest.fixture
 def local(tmp_path):
@@ -21,21 +23,28 @@ def local(tmp_path):
         public_api_url="http://127.0.0.1:8310",
         max_upload_bytes=20,
     )
+    app = create_local_app(settings, frontend)
     with TestClient(
-        create_local_app(settings, frontend), base_url=settings.public_api_url
+        app, base_url=settings.public_api_url, headers={"Origin": settings.public_api_url}
     ) as client:
+        token = app.state.accounts.bootstrap("admin@example.org", "Admin", LOCAL_OWNER)
+        client.post("/api/auth/set-password", json={"token": token, "password": PASSWORD})
+        login = client.post(
+            "/api/auth/login", json={"email": "admin@example.org", "password": PASSWORD}
+        )
+        assert login.status_code == 200
         yield client, settings
 
 
 def test_local_boundary_and_session_cookie(local):
     client, _ = local
-    assert client.post("/api/ws-tickets").status_code == 401
     assert client.get("/api/auth/me", headers={"Origin": "https://other.test"}).status_code == 403
     assert client.get("/api/auth/me", headers={"Host": "evil.test"}).status_code == 403
+    assert client.post("/api/ws-tickets", headers={"Origin": ""}).status_code == 403
     response = client.get("/api/auth/me")
     assert response.status_code == 200
-    assert "HttpOnly" in response.headers["set-cookie"]
-    assert "SameSite=strict" in response.headers["set-cookie"]
+    assert response.json()["user"]["id"] == str(LOCAL_OWNER)
+    assert response.json()["user"]["role"] == "ADMIN"
     assert (
         client.post("/api/ws-tickets").json()["url"].startswith("ws://127.0.0.1:8310/acp?ticket=")
     )
@@ -46,7 +55,6 @@ def test_local_boundary_and_session_cookie(local):
 
 def test_upload_identity_size_and_persistence(local):
     client, settings = local
-    client.get("/api/auth/me")
     ident = str(uuid4())
     data = {"upload_id": ident, "placeholder": f"ngopilot-upload://{ident}/form.png"}
     assert (
@@ -74,7 +82,6 @@ def test_upload_identity_size_and_persistence(local):
 
 def test_only_registered_unchanged_artifacts_download(local):
     client, settings = local
-    client.get("/api/auth/me")
     workflow = settings.data_root / "tenants" / str(LOCAL_OWNER) / "workflow"
     output = workflow / "jobs" / "paper" / "job_1" / "outputs" / "result.xlsx"
     output.parent.mkdir(parents=True)
@@ -131,7 +138,6 @@ def test_confirmation_is_bound_to_current_task_revision(local, monkeypatch):
         next_operations=["review"],
         error=None,
     )
-    client.get("/api/auth/me")
     current = client.get(f"/api/workflows/{job.job_id}").json()
     payload = {"confirm_all": True}
     confirmations = HumanConfirmations(workflow)

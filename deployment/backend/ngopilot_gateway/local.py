@@ -1,8 +1,10 @@
 """Loopback-only transport for the original NGOPilot Chatbot and ACP runtime.
 
-This is a single-owner local launcher, not the production account/GCS gateway.
-Conversation, planning and tool execution stay in the existing Rust Agent. This
-module only serves its renderer, uploads, verified artifacts and ACP transport.
+This is a loopback launcher, not the production account/GCS gateway. Staff sign
+in with invitation-only local accounts (see ``local_accounts``); every account
+has its own Agent tenant. Conversation, planning and tool execution stay in the
+existing Rust Agent. This module only serves its renderer, accounts, uploads,
+verified artifacts and ACP transport.
 """
 
 from __future__ import annotations
@@ -19,16 +21,20 @@ from time import monotonic
 from uuid import UUID
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from websockets.asyncio.client import connect
 
 from .acp_proxy import MAX_ACP_MESSAGE_BYTES, browser_message, isolate_client_request
 from .config import Settings
+from .local_accounts import SESSION_ABSOLUTE_SECONDS, AccountError, LocalAccounts, Session, require
 from .processes import TenantProcessManager
 from .storage import PLACEHOLDER_PATTERN, parse_placeholder, safe_filename
 
+# Tenant of the pre-account single-owner launcher; the first administrator inherits it.
 LOCAL_OWNER = UUID("dc5aab2c-7220-4ef3-bf54-9386b9d95412")
+SESSION_COOKIE = "ngopilot_session"
+PUBLIC_PATHS = {"/api/runtime", "/api/auth/login", "/api/auth/set-password", "/healthz"}
 UPLOAD_SUFFIXES = {
     ".jpg",
     ".jpeg",
@@ -64,24 +70,64 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         raise ValueError("The local launcher must be published on HTTP loopback only")
     frontend = frontend or Path(os.environ.get("NGOPILOT_FRONTEND_DIR", "/opt/ngopilot/frontend"))
     manager = TenantProcessManager(settings)
-    root = manager.tenant_root(LOCAL_OWNER)
-    uploads = root / "uploads"
-    uploads.mkdir(parents=True, exist_ok=True, mode=0o700)
-    cookie = secrets.token_urlsafe(32)
-    tickets: dict[str, float] = {}
-    downloads: dict[str, tuple[Path, float]] = {}
+    settings.data_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    accounts = LocalAccounts(settings.data_root / "accounts.sqlite3")
+    tickets: dict[str, tuple[float, Session]] = {}
+    downloads: dict[str, tuple[Path, float, UUID]] = {}
     upload_events: dict[str, asyncio.Event] = {}
+
+    def uploads_for(user_id: UUID) -> Path:
+        folder = manager.tenant_root(user_id) / "uploads"
+        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return folder
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
         await manager.stop_all()
+        accounts.close()
 
     app = FastAPI(title="NGOPilot Agent · 本機", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.processes = manager
+    app.state.accounts = accounts
     from .workflow_routes import register_workflow_routes
 
-    register_workflow_routes(app, settings, lambda: LOCAL_OWNER)
+    def current(request: Request) -> Session:
+        return request.state.session
+
+    def owner(request: Request) -> UUID:
+        return current(request).user_id
+
+    register_workflow_routes(app, settings, owner)
+
+    @app.exception_handler(AccountError)
+    async def account_error(_: Request, error: AccountError):
+        headers = {"Retry-After": "900"} if error.status == 429 else None
+        return JSONResponse({"detail": str(error)}, status_code=error.status, headers=headers)
+
+    def set_cookie(response: Response, token: str, max_age: int = SESSION_ABSOLUTE_SECONDS):
+        # Plain HTTP is accepted only because create_local_app requires loopback.
+        response.set_cookie(
+            SESSION_COOKIE, token, max_age=max_age, path="/", httponly=True, samesite="strict"
+        )
+
+    async def json_body(request: Request) -> dict:
+        require(
+            request.headers.get("content-type", "").split(";")[0] == "application/json",
+            415,
+            "需要 JSON 請求。",
+        )
+        raw = await request.body()
+        require(len(raw) <= 8192, 413, "請求過大。")
+        try:
+            body = json.loads(raw)
+        except ValueError as error:
+            raise AccountError(400, "JSON 格式不正確。") from error
+        require(isinstance(body, dict), 400, "無效請求。")
+        return body
+
+    def source(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
 
     @app.middleware("http")
     async def boundary(request: Request, call_next):
@@ -91,12 +137,13 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             or request.headers.get("sec-fetch-site") == "cross-site"
         ):
             return JSONResponse({"detail": "Local same-origin access required"}, status_code=403)
-        public_paths = {"/api/auth/me", "/api/runtime", "/healthz"}
-        if request.url.path.startswith("/api/") and request.url.path not in public_paths:
-            if not secrets.compare_digest(request.cookies.get("ngopilot.local", ""), cookie):
-                return JSONResponse(
-                    {"detail": "Open NGOPilot in this browser first"}, status_code=401
-                )
+        if request.method not in {"GET", "HEAD"} and request.headers.get("origin") is None:
+            return JSONResponse({"detail": "Local same-origin access required"}, status_code=403)
+        if request.url.path.startswith("/api/") and request.url.path not in PUBLIC_PATHS:
+            session = accounts.session(request.cookies.get(SESSION_COOKIE))
+            if session is None:
+                return JSONResponse({"detail": "請登入後繼續。"}, status_code=401)
+            request.state.session = session
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -110,11 +157,12 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         return {"status": "ok", "mode": "local-agent"}
 
     @app.get("/api/runtime")
-    async def runtime_config():
+    async def runtime_config(request: Request):
+        session = accounts.session(request.cookies.get(SESSION_COOKIE), touch=False)
         return {
             "GOOSE_DEFAULT_PROVIDER": settings.goose_provider,
             "GOOSE_DEFAULT_MODEL": settings.goose_model,
-            "GOOSE_WORKING_DIR": str(root),
+            "GOOSE_WORKING_DIR": str(manager.tenant_root(session.user_id)) if session else "",
             "NGOPILOT_LOCAL": True,
             "NGOPILOT_MODEL_CONFIGURED": bool(os.getenv("FOUNDRY_API_KEY")),
             "NGOPILOT_MODEL_NAME": os.getenv("FOUNDRY_DEPLOYMENT", "gpt-6-luna"),
@@ -122,33 +170,120 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             "NGOPILOT_SCHEDULER_ENABLED": bool(os.getenv("NGOPILOT_SCHEDULER_URL")),
         }
 
+    def session_view(session: Session) -> dict:
+        from .local_accounts import public_user
+
+        return {
+            "user": public_user(accounts.user(session.user_id)),
+            "expiresAt": session.expires_at,
+            "local": True,
+        }
+
     @app.get("/api/auth/me")
-    async def owner():
-        response = JSONResponse({"id": str(LOCAL_OWNER), "name": "本機使用者", "local": True})
-        response.set_cookie("ngopilot.local", cookie, httponly=True, samesite="strict")
+    async def me(request: Request):
+        return session_view(current(request))
+
+    @app.post("/api/auth/login")
+    async def login(request: Request):
+        body = await json_body(request)
+        token, session = await asyncio.to_thread(
+            accounts.login, body.get("email"), body.get("password"), source(request)
+        )
+        response = JSONResponse(session_view(session))
+        set_cookie(response, token)
+        return response
+
+    @app.post("/api/auth/set-password")
+    async def set_password(request: Request):
+        body = await json_body(request)
+        await asyncio.to_thread(
+            accounts.redeem, body.get("token"), body.get("password"), source(request)
+        )
+        response = JSONResponse({"ok": True})
+        set_cookie(response, "", 0)
         return response
 
     @app.post("/api/auth/logout")
-    async def logout():
+    async def logout(request: Request):
+        accounts.logout(current(request))
         response = JSONResponse({"ok": True})
-        response.delete_cookie("ngopilot.local")
+        set_cookie(response, "", 0)
         return response
 
+    @app.post("/api/auth/password")
+    async def change_password(request: Request):
+        body = await json_body(request)
+        await asyncio.to_thread(
+            accounts.change_password,
+            current(request),
+            body.get("oldPassword"),
+            body.get("password"),
+        )
+        response = JSONResponse({"ok": True})
+        set_cookie(response, "", 0)
+        return response
+
+    @app.get("/api/auth/sessions")
+    async def sessions(request: Request):
+        return {"sessions": accounts.sessions(current(request))}
+
+    @app.post("/api/auth/sessions/revoke-others")
+    async def revoke_others(request: Request):
+        accounts.revoke_others(current(request))
+        return {"ok": True}
+
+    def password_link(token: str) -> str:
+        return f"{settings.public_api_url}/#set-password={token}"
+
+    @app.get("/api/admin/users")
+    async def users(request: Request):
+        accounts.require_admin(current(request))
+        return {"users": accounts.users()}
+
+    @app.get("/api/admin/audit")
+    async def audit(request: Request):
+        accounts.require_admin(current(request))
+        return {"events": accounts.audit_events()}
+
+    @app.post("/api/admin/users", status_code=201)
+    async def invite(request: Request):
+        admin = accounts.require_admin(current(request))
+        body = await json_body(request)
+        accounts.limit(f"admin:{admin['id']}", 30)
+        user, token = accounts.create_user(
+            body.get("email"), body.get("name"), body.get("role"), admin["id"]
+        )
+        return {"user": user, "link": password_link(token)}
+
+    @app.patch("/api/admin/users/{user_id}")
+    async def update_user(user_id: str, request: Request):
+        body = await json_body(request)
+        return {"user": accounts.update_user(current(request), user_id, body)}
+
+    @app.post("/api/admin/users/{user_id}/reset")
+    async def reset(user_id: str, request: Request):
+        admin = accounts.require_admin(current(request))
+        accounts.limit(f"admin:{admin['id']}", 30)
+        return {"link": password_link(accounts.reset_link(current(request), user_id))}
+
     @app.post("/api/ws-tickets")
-    async def ticket():
+    async def ticket(request: Request):
         now = monotonic()
-        for key, expiry in list(tickets.items()):
+        for key, (expiry, _) in list(tickets.items()):
             if expiry < now:
                 tickets.pop(key, None)
         value = secrets.token_urlsafe(32)
-        tickets[value] = now + 60
+        tickets[value] = (now + 60, current(request))
         return {
             "url": settings.public_api_url.replace("http://", "ws://", 1) + "/acp?ticket=" + value
         }
 
     @app.post("/api/uploads", status_code=201)
     async def upload(
-        file: UploadFile = File(...), upload_id: str = Form(...), placeholder: str = Form(...)
+        request: Request,
+        file: UploadFile = File(...),
+        upload_id: str = Form(...),
+        placeholder: str = Form(...),
     ):
         try:
             ident, filename = parse_placeholder(placeholder)
@@ -168,7 +303,7 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                 raise ValueError("Unsupported attachment type")
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
-        folder = uploads / str(ident)
+        folder = uploads_for(owner(request)) / str(ident)
         if folder.exists():
             raise HTTPException(409, "This upload already exists")
         folder.mkdir(mode=0o700)
@@ -202,11 +337,11 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             await file.close()
             event.set()
 
-    async def resolve(value):
+    async def resolve(value, uploads: Path):
         if isinstance(value, dict):
-            return {key: await resolve(child) for key, child in value.items()}
+            return {key: await resolve(child, uploads) for key, child in value.items()}
         if isinstance(value, list):
-            return [await resolve(child) for child in value]
+            return [await resolve(child, uploads) for child in value]
         if not isinstance(value, str):
             return value
         for placeholder in set(PLACEHOLDER_PATTERN.findall(value)):
@@ -232,9 +367,9 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             value = value.replace(placeholder, str(path))
         return value
 
-    def artifact(path_value: str) -> tuple[Path, sqlite3.Row]:
+    def artifact(path_value: str, user_id: UUID) -> tuple[Path, sqlite3.Row]:
         path = Path(path_value)
-        workflow = root / "workflow"
+        workflow = manager.tenant_root(user_id) / "workflow"
         try:
             resolved = path.resolve(strict=True)
             if not resolved.is_relative_to(workflow / "jobs") or path.is_symlink():
@@ -255,14 +390,14 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
             raise HTTPException(404, "Verified artifact is unavailable") from error
 
     @app.get("/api/artifacts/url")
-    async def artifact_url(path: str):
-        resolved, row = artifact(path)
+    async def artifact_url(path: str, request: Request):
+        resolved, row = artifact(path, owner(request))
         now = monotonic()
-        for key, (_, expiry) in list(downloads.items()):
+        for key, (_, expiry, _) in list(downloads.items()):
             if expiry < now:
                 downloads.pop(key, None)
         token = secrets.token_urlsafe(32)
-        downloads[token] = (resolved, now + 300)
+        downloads[token] = (resolved, now + 300, owner(request))
         return {
             "url": f"/api/downloads/{token}",
             "filename": resolved.name,
@@ -273,31 +408,37 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         }
 
     @app.get("/api/downloads/{token}")
-    async def download(token: str):
+    async def download(token: str, request: Request):
         item = downloads.get(token)
-        if not item or item[1] < monotonic():
+        if not item or item[1] < monotonic() or item[2] != owner(request):
             raise HTTPException(404, "Download link expired")
-        path, row = artifact(str(item[0]))
+        path, row = artifact(str(item[0]), item[2])
         return FileResponse(path, media_type=row["media_type"], filename=path.name)
 
     @app.websocket("/acp")
     async def acp(websocket: WebSocket):
         token = websocket.query_params.get("ticket", "")
-        expiry = tickets.pop(token, 0)
+        expiry, session = tickets.pop(token, (0, None))
+        cookie_session = accounts.session(websocket.cookies.get(SESSION_COOKIE))
         if (
             expiry < monotonic()
+            or session is None
+            or cookie_session is None
+            or cookie_session.hash != session.hash
             or websocket.headers.get("host") != parsed.netloc
             or (websocket.headers.get("origin") != settings.public_api_url)
-            or not secrets.compare_digest(websocket.cookies.get("ngopilot.local", ""), cookie)
         ):
             await websocket.close(code=1008)
             return
+        user_id = session.user_id
+        root = manager.tenant_root(user_id)
+        uploads = uploads_for(user_id)
         await websocket.accept()
         acquired = False
         tasks = []
         model_requests = {}
         try:
-            managed = await manager.acquire(LOCAL_OWNER)
+            managed = await manager.acquire(user_id)
             acquired = True
             async with connect(
                 managed.websocket_url,
@@ -325,8 +466,10 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                                 }
                             )
                             continue
+                        if not accounts.active(session):
+                            return
                         try:
-                            message = await resolve(isolate_client_request(message, root))
+                            message = await resolve(isolate_client_request(message, root), uploads)
                         except ValueError as error:
                             if "id" in message:
                                 await websocket.send_json(
@@ -403,7 +546,16 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                             continue
                         await websocket.send_text(browser_message(raw, decoded))
 
-                tasks = [asyncio.create_task(inbound()), asyncio.create_task(outbound())]
+                async def watch():
+                    # Sign-out, password change or deactivation ends open connections.
+                    while accounts.session(websocket.cookies.get(SESSION_COOKIE), touch=False):
+                        await asyncio.sleep(30)
+
+                tasks = [
+                    asyncio.create_task(inbound()),
+                    asyncio.create_task(outbound()),
+                    asyncio.create_task(watch()),
+                ]
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 for task in done:
                     task.result()
@@ -416,7 +568,7 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             if acquired:
-                await manager.release(LOCAL_OWNER)
+                await manager.release(user_id)
             try:
                 await websocket.close()
             except RuntimeError:

@@ -12,6 +12,7 @@ import { Navigation } from './NavigationPanel';
 import { NAV_DIMENSIONS, Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { FoundryStatus } from '../ngo/FoundryStatus';
+import { AccountMenu } from '../ngo/AccountMenu';
 import { UserInput } from '../../types/message';
 
 const i18n = defineMessages({
@@ -76,7 +77,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
       {ngoHome && <header className="ngo-app-header">
         <button className="ngo-nav-toggle" aria-label={navToggleTitle} onClick={() => setIsNavExpanded(!isNavExpanded)}><PanelLeft size={20} /></button>
         <a className="ngo-brand" href="#/"><span className="ngo-brand-symbol"><Footprints size={21} strokeWidth={1.8} /></span><strong>CareFlow <span>Pilot</span></strong></a>
-        <span className="ngo-header-divider" /><span className="ngo-product-name">NGO 工作助手</span><FoundryStatus />
+        <span className="ngo-header-divider" /><span className="ngo-product-name">NGO 工作助手</span><FoundryStatus /><AccountMenu />
       </header>}
       <div
         style={{ zIndex: Z_INDEX.HEADER }}

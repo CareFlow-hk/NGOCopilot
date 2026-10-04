@@ -1,0 +1,54 @@
+/* Local accounts: sign-in extras and the settings page, in the Atlas editorial theme. */
+.auth-notice { margin: 0 0 18px; padding: 10px 12px; border-left: 2px solid #1d2622; color: #1d2622; background: #fffdf8; font-size: 13px; line-height: 1.6; }
+.auth-hint { margin: -6px 0 0; color: #5f5b52; font-size: 12.5px; }
+.auth-help { margin-top: 26px; color: #5f5b52; font-size: 13px; line-height: 1.7; }
+.auth-help summary { cursor: pointer; color: #1d2622; }
+.auth-text-button { margin-top: 18px; border: 0; padding: 0; color: #7d3b27; background: transparent; font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.auth-form select { width: 100%; min-height: 46px; }
+
+.account-page { position: fixed; inset: 0; z-index: 1000; overflow: auto; color: #1d2622; background: #f7f4ec; font-family: "Inter", "Noto Sans TC", "PingFang HK", -apple-system, sans-serif; font-size: 14px; }
+.account-page *, .account-page *::before, .account-page *::after { box-sizing: border-box; }
+.account-page [hidden] { display: none !important; }
+.account-page.is-busy { cursor: progress; }
+.account-inner { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+.account-page header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid #ddd6c6; }
+.account-page h1, .account-page h2 { margin: 0; font-family: "Noto Serif TC", "Songti TC", serif; font-weight: 600; }
+.account-page h1 { font-size: 28px; }
+.account-page h2 { margin-bottom: 14px; font-size: 18px; }
+.account-page header p { margin: 6px 0 0; color: #5f5b52; }
+.account-page section { margin: 18px 0; padding: 22px; border: 1px solid #ddd6c6; border-radius: 3px; background: #fffdf8; }
+.account-page section > p { color: #5f5b52; line-height: 1.7; }
+.account-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.account-columns section { margin: 18px 0 0; }
+.account-page form { display: grid; gap: 14px; }
+.account-page form p { margin: 0; color: #5f5b52; font-size: 12.5px; }
+.account-page label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.account-page input, .account-page select { width: 100%; min-height: 42px; border: 1px solid #ddd6c6; border-radius: 2px; padding: 8px 10px; color: #1d2622; background: #fff; font: inherit; font-weight: 400; }
+.account-page input:focus, .account-page select:focus { outline: none; border-color: #7d3b27; box-shadow: 0 0 0 3px rgb(125 59 39 / 12%); }
+.account-page button { min-height: 40px; border: 1px solid #ddd6c6; border-radius: 3px; padding: 8px 14px; color: #1d2622; background: transparent; font: inherit; cursor: pointer; }
+.account-page button:hover { background: #efe9dc; }
+.account-page button:focus-visible { outline: 2px solid #6b2419; outline-offset: 2px; }
+.account-page button:disabled, .account-page select:disabled { cursor: not-allowed; opacity: 0.55; }
+.account-page form > button { justify-self: start; border-color: #1d2622; color: #fffdf8; background: #1d2622; }
+.account-page form > button:hover { background: #2e3a35; }
+.account-invite { grid-template-columns: 1fr 1.4fr 0.8fr auto; align-items: end; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-message { margin: 18px 0 0; padding: 10px 12px; border-left: 2px solid #1d2622; background: #fffdf8; }
+.account-message.is-error { border-color: #6b2419; color: #6b2419; }
+.account-link { border-color: #7d3b27 !important; }
+.account-link input { margin-bottom: 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.account-devices { margin: 0 0 14px; padding-left: 18px; line-height: 1.9; }
+.account-table { overflow-x: auto; }
+.account-page table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.account-page th, .account-page td { padding: 10px 8px; border-bottom: 1px solid #ebe5d8; text-align: left; vertical-align: middle; }
+.account-page th { color: #5f5b52; font-size: 12px; font-weight: 600; }
+.account-page td small { display: block; color: #5f5b52; }
+.account-page td select { min-height: 36px; min-width: 96px; }
+.account-note { color: #5f5b52; font-size: 12.5px; line-height: 1.7; }
+
+@media (max-width: 720px) {
+  .account-inner { padding: 20px 16px 48px; }
+  .account-columns { grid-template-columns: 1fr; gap: 0; }
+  .account-invite { grid-template-columns: 1fr; }
+  .account-page table { min-width: 560px; }
+}
