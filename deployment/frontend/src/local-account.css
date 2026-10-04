@@ -54,11 +54,18 @@
 .account-meter progress::-webkit-progress-bar { border-radius: 3px; background: #ebe5d8; }
 .account-meter progress::-webkit-progress-value { border-radius: 3px; background: #1d2622; }
 .account-meter progress::-moz-progress-bar { border-radius: 3px; background: #1d2622; }
+.account-limit { display: grid; grid-template-columns: auto auto; gap: 2px 10px; align-items: center; justify-content: start; }
+.account-limit small { grid-column: 1; }
+.account-limit button { grid-column: 2; grid-row: 1 / span 2; min-height: 32px; padding: 4px 10px; }
+.account-limit-editor td { background: #f7f4ec; }
+.account-limit-form { grid-template-columns: repeat(2, minmax(0, 200px)); margin-top: 10px; align-items: end; }
+.account-limit-form p, .account-limit-form .account-actions { grid-column: 1 / -1; }
+.account-limit-form .account-actions button:first-child { border-color: #1d2622; color: #fffdf8; background: #1d2622; }
 .account-note { color: #5f5b52; font-size: 12.5px; line-height: 1.7; }
 
 @media (max-width: 720px) {
   .account-inner { padding: 20px 16px 48px; }
   .account-columns { grid-template-columns: 1fr; gap: 0; }
-  .account-invite, .account-usage { grid-template-columns: 1fr; }
+  .account-invite, .account-usage, .account-limit-form { grid-template-columns: 1fr; }
   .account-page table { min-width: 560px; }
 }

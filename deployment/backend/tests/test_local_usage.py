@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from ngopilot_gateway.config import Settings
 from ngopilot_gateway.local import LOCAL_OWNER, create_local_app
-from ngopilot_gateway.local_accounts import LocalAccounts
+from ngopilot_gateway.local_accounts import AccountError, LocalAccounts
 from ngopilot_gateway.local_usage import (
     LocalUsage,
     UsageLimitReached,
@@ -128,8 +128,52 @@ def test_usage_endpoints(tmp_path):
             )
             assert member.get("/api/auth/usage").json()["limits"]["messages"] == 500
             assert member.get("/api/admin/usage").status_code == 403
+            member_id = member.get("/api/auth/me").json()["user"]["id"]
+            limits = {"messages": 50, "images": None}
+            path = f"/api/admin/users/{member_id}/limits"
+            assert member.put(path, json=limits).status_code == 403
+            assert admin.put(path, json=limits).json() == limits
+            assert member.get("/api/auth/usage").json()["limits"]["messages"] == 50
+            assert member.get("/api/auth/usage").json()["limits"]["images"] == 200
             # A failed confirmation grants no continuation.
             response = member.post("/api/workflows/job_missing/confirm", json={})
             assert response.status_code in {404, 422}
             credits = app.state.accounts._all("SELECT * FROM continuation_credits")
             assert credits == []
+
+
+def test_admin_can_override_one_members_caps(setup):
+    usage, sessions, _ = setup
+    member, admin = sessions["MEMBER"], sessions["ADMIN"]
+    target = str(member.user_id)
+    with pytest.raises(AccountError) as denied:
+        usage.set_limits(member, target, 10, 10)
+    assert denied.value.status == 403
+    for bad in (-1, 1.5, "10", True, 100_001):
+        with pytest.raises(AccountError):
+            usage.set_limits(admin, target, bad, None)
+
+    # Raise messages, keep the default image cap.
+    usage.set_limits(admin, target, 5, None)
+    assert usage.own(member)["limits"]["messages"] == 5
+    assert usage.own(member)["limits"]["images"] == 2
+    for _ in range(5):
+        usage.record_prompt(member, prompt())
+    with pytest.raises(UsageLimitReached, match="上限 5 次"):
+        usage.record_prompt(member, prompt())
+
+    # Zero lifts that cap entirely.
+    usage.set_limits(admin, target, 0, 1)
+    usage.record_prompt(member, prompt())
+    assert usage.own(member)["limits"]["messages"] is None
+    with pytest.raises(UsageLimitReached, match="圖片"):
+        usage.record_prompt(member, prompt("a.png", "b.png"))
+    assert usage.report()["overrides"][target] == {"messages": 0, "images": 1}
+
+    # Clearing both restores the defaults.
+    usage.set_limits(admin, target, None, None)
+    assert target not in usage.report()["overrides"]
+    with pytest.raises(UsageLimitReached):
+        usage.record_prompt(member, prompt())
+    actions = [event["action"] for event in usage.accounts.audit_events()]
+    assert actions.count("usage_limits_updated") == 3

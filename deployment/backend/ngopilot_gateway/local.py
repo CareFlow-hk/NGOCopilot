@@ -260,6 +260,11 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         accounts.require_admin(current(request))
         return usage.report()
 
+    @app.put("/api/admin/users/{user_id}/limits")
+    async def user_limits(user_id: str, request: Request):
+        body = await json_body(request)
+        return usage.set_limits(current(request), user_id, body.get("messages"), body.get("images"))
+
     @app.get("/api/admin/users")
     async def users(request: Request):
         accounts.require_admin(current(request))

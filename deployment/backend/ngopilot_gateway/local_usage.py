@@ -2,7 +2,8 @@
 
 A message is one ``session/prompt`` sent by the account. An image is one image
 or PDF attachment (distinct upload placeholder) sent in a prompt. Weeks start on
-Monday 00:00 Hong Kong time. Administrators are counted but never capped. The
+Monday 00:00 Hong Kong time. Administrators are counted but never capped; they
+may override the default caps for an individual member. The
 message that continues a task after a task-card confirmation is never blocked
 and does not count, so a confirmed task can always finish.
 """
@@ -14,12 +15,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from .local_accounts import LocalAccounts, Session
+from .local_accounts import LocalAccounts, Session, require
 from .storage import PLACEHOLDER_PATTERN, parse_placeholder
 
 HONG_KONG = timezone(timedelta(hours=8))
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".pdf")
 REPORT_WEEKS = 4
+MAX_LIMIT = 100_000
 
 
 def week_start(at: datetime) -> datetime:
@@ -63,6 +65,11 @@ class LocalUsage:
                 """CREATE TABLE IF NOT EXISTS continuation_credits (
                 user_id TEXT PRIMARY KEY REFERENCES users(id), count INTEGER NOT NULL)"""
             )
+            # NULL keeps the default; 0 removes that member's cap.
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS usage_limits (
+                user_id TEXT PRIMARY KEY REFERENCES users(id), messages INTEGER, images INTEGER)"""
+            )
 
     def _week(self) -> datetime:
         return week_start(datetime.fromtimestamp(self.accounts.now(), timezone.utc))
@@ -74,6 +81,45 @@ class LocalUsage:
             "images": self.image_limit or None,
             "resetsAt": int(reset.timestamp()),
         }
+
+    def _effective(self, db, user_id: str) -> tuple[int, int]:
+        """The member's caps after any override; zero means uncapped."""
+        row = db.execute(
+            "SELECT messages, images FROM usage_limits WHERE user_id=?", (user_id,)
+        ).fetchone()
+        messages = row["messages"] if row and row["messages"] is not None else None
+        images = row["images"] if row and row["images"] is not None else None
+        return (
+            self.message_limit if messages is None else messages,
+            self.image_limit if images is None else images,
+        )
+
+    def set_limits(self, actor: Session, user_id: str, messages: object, images: object) -> dict:
+        for value in (messages, images):
+            require(
+                value is None
+                or (
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and 0 <= value <= MAX_LIMIT
+                ),
+                400,
+                f"上限須為 0–{MAX_LIMIT} 的整數；留空使用預設，0 表示不限。",
+            )
+        with self.accounts.transaction() as db:
+            admin = self.accounts.require_admin(actor)
+            user = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+            require(user is not None, 404, "帳號不存在。")
+            if messages is None and images is None:
+                db.execute("DELETE FROM usage_limits WHERE user_id=?", (user_id,))
+            else:
+                db.execute(
+                    """INSERT INTO usage_limits VALUES(?,?,?) ON CONFLICT(user_id)
+                    DO UPDATE SET messages=excluded.messages, images=excluded.images""",
+                    (user_id, messages, images),
+                )
+            self.accounts._audit(db, admin["id"], "usage_limits_updated", user_id)
+        return {"messages": messages, "images": images}
 
     def grant_continuation(self, user_id: UUID) -> None:
         with self.accounts.transaction() as db:
@@ -109,17 +155,18 @@ class LocalUsage:
                 "SELECT messages, images FROM usage WHERE user_id=? AND week=?", (user_id, week)
             ).fetchone()
             if role != "ADMIN":
+                message_limit, image_limit = self._effective(db, user_id)
                 monday = self._week() + timedelta(days=7)
                 reset = f"{monday.month} 月 {monday.day} 日（星期一）"
-                if self.message_limit and used["messages"] + 1 > self.message_limit:
+                if message_limit and used["messages"] + 1 > message_limit:
                     raise UsageLimitReached(
-                        f"本週對話次數已用完（上限 {self.message_limit} 次），{reset}重置。"
+                        f"本週對話次數已用完（上限 {message_limit} 次），{reset}重置。"
                         "已開始的任務仍可在任務卡核對後完成；如需增加額度，請聯絡管理員。"
                     )
-                if self.image_limit and used["images"] + images > self.image_limit:
-                    left = max(0, self.image_limit - used["images"])
+                if image_limit and used["images"] + images > image_limit:
+                    left = max(0, image_limit - used["images"])
                     raise UsageLimitReached(
-                        f"本週圖片／PDF 處理次數不足（上限 {self.image_limit}，"
+                        f"本週圖片／PDF 處理次數不足（上限 {image_limit}，"
                         f"尚餘 {left}，這次附上 {images} 個），{reset}重置。"
                         "如需增加額度，請聯絡管理員。"
                     )
@@ -136,14 +183,18 @@ class LocalUsage:
             week,
         )
         user = self.accounts.user(session.user_id)
-        limited = user["role"] != "ADMIN"
+        limits = self.limits()
+        if user["role"] == "ADMIN":
+            limits.update(messages=None, images=None)
+        else:
+            with self.accounts.lock:
+                messages, images = self._effective(self.accounts.db, user["id"])
+            limits.update(messages=messages or None, images=images or None)
         return {
             "week": week,
             "messages": row["messages"] if row else 0,
             "images": row["images"] if row else 0,
-            "limits": self.limits()
-            if limited
-            else {**self.limits(), "messages": None, "images": None},
+            "limits": limits,
         }
 
     def report(self) -> dict:
@@ -161,4 +212,8 @@ class LocalUsage:
                 "images": row["images"],
                 "continuations": row["continuations"],
             }
-        return {"weeks": weeks, "limits": self.limits(), "usage": usage}
+        overrides = {
+            row["user_id"]: {"messages": row["messages"], "images": row["images"]}
+            for row in self.accounts._all("SELECT * FROM usage_limits")
+        }
+        return {"weeks": weeks, "limits": self.limits(), "usage": usage, "overrides": overrides}

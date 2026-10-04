@@ -16,7 +16,8 @@ interface Device { id: string; created_at: number; current: boolean }
 interface Limits { messages: number | null; images: number | null; resetsAt: number }
 interface OwnUsage { messages: number; images: number; limits: Limits }
 type WeekUsage = { messages: number; images: number; continuations: number };
-interface UsageReport { weeks: string[]; limits: Limits; usage: Record<string, Record<string, WeekUsage>> }
+type Override = { messages: number | null; images: number | null };
+interface UsageReport { weeks: string[]; limits: Limits; usage: Record<string, Record<string, WeekUsage>>; overrides: Record<string, Override> }
 interface AuditEvent { id: number; time: number; action: string; actor_email?: string; target_email?: string }
 
 export interface AccountControls { name: string; email: string; role: Account["role"]; openSettings: () => void; logout: () => Promise<void> }
@@ -28,7 +29,7 @@ const CHANNEL = "ngopilot-account";
 const actions: Record<string, string> = {
   login: "登入", login_failed: "登入失敗", logout: "登出", user_created: "建立帳號", user_updated: "修改帳號",
   password_link_created: "產生設定密碼連結", password_set: "設定密碼", password_changed: "修改密碼",
-  other_sessions_revoked: "登出其他裝置", operator_recovery: "運維恢復管理員",
+  other_sessions_revoked: "登出其他裝置", operator_recovery: "運維恢復管理員", usage_limits_updated: "調整用量上限",
 };
 
 class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
@@ -187,13 +188,9 @@ function settingsPage(session: SessionView): void {
       h("p", {}, `每週一 00:00（香港時間）重置，下次 ${day(mine.limits.resetsAt)}。在任務卡按「確認」後接續的那條訊息不計入。`),
     );
     if (report) {
-      usageNote.textContent = `成員每週上限：對話 ${report.limits.messages ?? "不限"} 條、圖片／PDF ${report.limits.images ?? "不限"} 個；管理員只統計不設上限。格內為「訊息 · 圖片」，括號為核對後接續（不計入）。`;
-      usageHead.replaceChildren(h("th", {}, "成員"), ...report.weeks.map((week, index) => h("th", {}, index === 0 ? `本週（${week.slice(5)} 起）` : `${week.slice(5)} 起`)));
-      usageRows.replaceChildren(...people.users.map((user) => h("tr", {}, h("td", {}, user.name, h("small", {}, user.role === "ADMIN" ? "管理員" : "成員")),
-        ...report.weeks.map((week) => {
-          const value = report.usage[user.id]?.[week];
-          return h("td", {}, value ? `${value.messages} · ${value.images}${value.continuations ? `（+${value.continuations}）` : ""}` : "—");
-        }))));
+      usageNote.textContent = `成員預設每週上限：對話 ${report.limits.messages ?? "不限"} 條、圖片／PDF ${report.limits.images ?? "不限"} 個；可為個別成員調整。管理員只統計不設上限。格內為「訊息 · 圖片」，括號為核對後接續（不計入）。`;
+      usageHead.replaceChildren(h("th", {}, "成員"), h("th", {}, "每週上限"), ...report.weeks.map((week, index) => h("th", {}, index === 0 ? `本週（${week.slice(5)} 起）` : `${week.slice(5)} 起`)));
+      usageRows.replaceChildren(...people.users.map((user) => usageRow(user, report)));
     }
     devices.replaceChildren(...own.sessions.map((device) => h("li", {}, `${device.current ? "目前登入" : "其他登入"} · 登入於 ${time(device.created_at)}`)));
     users.replaceChildren(...people.users.map(userRow));
@@ -206,6 +203,58 @@ function settingsPage(session: SessionView): void {
       await api(`/api/admin/users/${user.id}`, "PATCH", { name: user.name, role: user.role, disabled: user.disabled, ...changes });
       await reload(); show("帳號已更新，該帳號已有的登入已撤銷。");
     });
+  }
+  function limitText(value: number | null | undefined, fallback: number | null) {
+    const effective = value === null || value === undefined ? fallback : value || null;
+    return effective === null ? "不限" : String(effective);
+  }
+  function usageRow(user: Account, report: UsageReport) {
+    const override = report.overrides[user.id];
+    const custom = Boolean(override);
+    const limit = user.role === "ADMIN" ? h("small", {}, "不設上限")
+      : h("div", { className: "account-limit" },
+        h("span", {}, `${limitText(override?.messages, report.limits.messages)} · ${limitText(override?.images, report.limits.images)}`),
+        h("small", {}, custom ? "已單獨調整" : "預設"),
+        h("button", { type: "button", textContent: "調整", onclick: () => editLimits(user, report, row) }));
+    const row = h("tr", {}, h("td", {}, user.name, h("small", {}, user.role === "ADMIN" ? "管理員" : "成員")), h("td", {}, limit),
+      ...report.weeks.map((week) => {
+        const value = report.usage[user.id]?.[week];
+        return h("td", {}, value ? `${value.messages} · ${value.images}${value.continuations ? `（+${value.continuations}）` : ""}` : "—");
+      }));
+    return row;
+  }
+  function editLimits(user: Account, report: UsageReport, row: HTMLTableRowElement) {
+    usageRows.querySelector(".account-limit-editor")?.remove();
+    const override = report.overrides[user.id];
+    const number = (name: string, value: number | null | undefined, fallback: number | null) => h("input", {
+      name, type: "number", min: "0", max: "100000", step: "1", required: false, inputMode: "numeric",
+      value: value === null || value === undefined ? "" : String(value), placeholder: `預設 ${fallback ?? "不限"}`,
+    });
+    const messages = number("messages", override?.messages, report.limits.messages);
+    const images = number("images", override?.images, report.limits.images);
+    const parse = (input: HTMLInputElement) => input.value.trim() === "" ? null : Number(input.value);
+    const save = (body: Override) => void perform(async () => {
+      await api(`/api/admin/users/${user.id}/limits`, "PUT", body);
+      await reload(); show(`已更新 ${user.name} 的每週上限，立即生效。`);
+    });
+    const form = h("form", { className: "account-limit-form" },
+      field("對話訊息／週", messages), field("圖片／PDF／週", images),
+      h("p", {}, "留空使用預設；0 表示不限。只影響這位成員，本週已用次數照計。"),
+      h("div", { className: "account-actions" },
+        h("button", { textContent: "儲存" }),
+        h("button", { type: "button", textContent: "恢復預設", disabled: !override, onclick: () => save({ messages: null, images: null }) }),
+        h("button", { type: "button", textContent: "取消", onclick: () => editor.remove() })));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const body = { messages: parse(messages), images: parse(images) };
+      if ([body.messages, body.images].some((value) => value !== null && (!Number.isInteger(value) || value < 0 || value > 100000))) {
+        show("上限須為 0–100000 的整數。", true); return;
+      }
+      save(body);
+    });
+    const editor = h("tr", { className: "account-limit-editor" }, h("td", { colSpan: report.weeks.length + 2 }, h("strong", {}, `調整 ${user.name} 的每週上限`), form));
+    row.after(editor);
+    messages.focus();
   }
   function userRow(user: Account) {
     const self = user.id === session.user.id;
