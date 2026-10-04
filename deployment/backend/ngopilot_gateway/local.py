@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 from contextlib import asynccontextmanager
@@ -28,12 +29,14 @@ from websockets.asyncio.client import connect
 from .acp_proxy import MAX_ACP_MESSAGE_BYTES, browser_message, isolate_client_request
 from .config import Settings
 from .local_accounts import SESSION_ABSOLUTE_SECONDS, AccountError, LocalAccounts, Session, require
+from .local_usage import LocalUsage, UsageLimitReached
 from .processes import TenantProcessManager
 from .storage import PLACEHOLDER_PATTERN, parse_placeholder, safe_filename
 
 # Tenant of the pre-account single-owner launcher; the first administrator inherits it.
 LOCAL_OWNER = UUID("dc5aab2c-7220-4ef3-bf54-9386b9d95412")
 SESSION_COOKIE = "ngopilot_session"
+CONFIRM_PATH = re.compile(r"/api/workflows/[^/]+/confirm")
 PUBLIC_PATHS = {"/api/runtime", "/api/auth/login", "/api/auth/set-password", "/healthz"}
 UPLOAD_SUFFIXES = {
     ".jpg",
@@ -72,6 +75,11 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
     manager = TenantProcessManager(settings)
     settings.data_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     accounts = LocalAccounts(settings.data_root / "accounts.sqlite3")
+    usage = LocalUsage(
+        accounts,
+        message_limit=int(os.getenv("NGOPILOT_WEEKLY_MESSAGE_LIMIT", "500")),
+        image_limit=int(os.getenv("NGOPILOT_WEEKLY_IMAGE_LIMIT", "200")),
+    )
     tickets: dict[str, tuple[float, Session]] = {}
     downloads: dict[str, tuple[Path, float, UUID]] = {}
     upload_events: dict[str, asyncio.Event] = {}
@@ -90,6 +98,7 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
     app = FastAPI(title="NGOPilot Agent · 本機", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.processes = manager
     app.state.accounts = accounts
+    app.state.usage = usage
     from .workflow_routes import register_workflow_routes
 
     def current(request: Request) -> Session:
@@ -145,6 +154,13 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                 return JSONResponse({"detail": "請登入後繼續。"}, status_code=401)
             request.state.session = session
         response = await call_next(request)
+        if (
+            request.method == "POST"
+            and response.status_code == 200
+            and CONFIRM_PATH.fullmatch(request.url.path)
+        ):
+            # The card then sends one continuation message; it must not be capped.
+            usage.grant_continuation(request.state.session.user_id)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -234,6 +250,15 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
 
     def password_link(token: str) -> str:
         return f"{settings.public_api_url}/#set-password={token}"
+
+    @app.get("/api/auth/usage")
+    async def own_usage(request: Request):
+        return usage.own(current(request))
+
+    @app.get("/api/admin/usage")
+    async def usage_report(request: Request):
+        accounts.require_admin(current(request))
+        return usage.report()
 
     @app.get("/api/admin/users")
     async def users(request: Request):
@@ -468,6 +493,18 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
                             continue
                         if not accounts.active(session):
                             return
+                        if message.get("method") == "session/prompt":
+                            try:
+                                usage.record_prompt(session, message)
+                            except UsageLimitReached as error:
+                                await websocket.send_json(
+                                    {
+                                        "jsonrpc": "2.0",
+                                        "id": message.get("id"),
+                                        "error": {"code": -32000, "message": str(error)},
+                                    }
+                                )
+                                continue
                         try:
                             message = await resolve(isolate_client_request(message, root), uploads)
                         except ValueError as error:

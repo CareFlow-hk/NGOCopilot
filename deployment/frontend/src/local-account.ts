@@ -13,6 +13,10 @@ export interface Account {
 }
 interface SessionView { user: Account; expiresAt: number }
 interface Device { id: string; created_at: number; current: boolean }
+interface Limits { messages: number | null; images: number | null; resetsAt: number }
+interface OwnUsage { messages: number; images: number; limits: Limits }
+type WeekUsage = { messages: number; images: number; continuations: number };
+interface UsageReport { weeks: string[]; limits: Limits; usage: Record<string, Record<string, WeekUsage>> }
 interface AuditEvent { id: number; time: number; action: string; actor_email?: string; target_email?: string }
 
 export interface AccountControls { name: string; email: string; role: Account["role"]; openSettings: () => void; logout: () => Promise<void> }
@@ -66,6 +70,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEle
 const field = (label: string, input: HTMLInputElement | HTMLSelectElement) => h("label", {}, h("span", {}, label), input);
 const input = (props: Partial<HTMLInputElement>) => h("input", { required: true, maxLength: 128, ...props });
 const time = (value: number) => new Date(value * 1000).toLocaleString("zh-HK");
+const day = (value: number) => new Date(value * 1000).toLocaleDateString("zh-HK", { month: "long", day: "numeric", weekday: "short" });
 
 function readGrant(): string {
   const match = window.location.hash.match(/^#set-password=([\w-]{43})$/);
@@ -127,6 +132,10 @@ function settingsPage(session: SessionView): void {
   const linkBox = h("section", { className: "account-link", hidden: true });
   const devices = h("ul", { className: "account-devices" });
   const users = h("tbody");
+  const ownUsage = h("div", { className: "account-usage" });
+  const usageHead = h("tr");
+  const usageRows = h("tbody");
+  const usageNote = h("p");
   const audit = h("tbody");
   let busy = false;
   const close = () => { page.remove(); document.removeEventListener("keydown", escape); };
@@ -162,11 +171,30 @@ function settingsPage(session: SessionView): void {
     } finally { busy = false; page.classList.remove("is-busy"); }
   }
   async function reload() {
-    const [own, people, events] = await Promise.all([
+    const [own, people, events, mine, report] = await Promise.all([
       api<{ sessions: Device[] }>("/api/auth/sessions"),
       admin ? api<{ users: Account[] }>("/api/admin/users") : Promise.resolve({ users: [] }),
       admin ? api<{ events: AuditEvent[] }>("/api/admin/audit") : Promise.resolve({ events: [] }),
+      api<OwnUsage>("/api/auth/usage"),
+      admin ? api<UsageReport>("/api/admin/usage") : Promise.resolve(undefined),
     ]);
+    const meter = (label: string, used: number, limit: number | null) => h("div", { className: "account-meter" },
+      h("span", {}, label), h("strong", {}, limit ? `${used} / ${limit}` : `${used}`),
+      limit ? h("progress", { max: limit, value: Math.min(used, limit) }) : h("small", {}, "管理員不設上限"));
+    ownUsage.replaceChildren(
+      meter("對話訊息", mine.messages, mine.limits.messages),
+      meter("圖片／PDF 處理", mine.images, mine.limits.images),
+      h("p", {}, `每週一 00:00（香港時間）重置，下次 ${day(mine.limits.resetsAt)}。在任務卡按「確認」後接續的那條訊息不計入。`),
+    );
+    if (report) {
+      usageNote.textContent = `成員每週上限：對話 ${report.limits.messages ?? "不限"} 條、圖片／PDF ${report.limits.images ?? "不限"} 個；管理員只統計不設上限。格內為「訊息 · 圖片」，括號為核對後接續（不計入）。`;
+      usageHead.replaceChildren(h("th", {}, "成員"), ...report.weeks.map((week, index) => h("th", {}, index === 0 ? `本週（${week.slice(5)} 起）` : `${week.slice(5)} 起`)));
+      usageRows.replaceChildren(...people.users.map((user) => h("tr", {}, h("td", {}, user.name, h("small", {}, user.role === "ADMIN" ? "管理員" : "成員")),
+        ...report.weeks.map((week) => {
+          const value = report.usage[user.id]?.[week];
+          return h("td", {}, value ? `${value.messages} · ${value.images}${value.continuations ? `（+${value.continuations}）` : ""}` : "—");
+        }))));
+    }
     devices.replaceChildren(...own.sessions.map((device) => h("li", {}, `${device.current ? "目前登入" : "其他登入"} · 登入於 ${time(device.created_at)}`)));
     users.replaceChildren(...people.users.map(userRow));
     audit.replaceChildren(...events.events.map((event) => h("tr", {},
@@ -234,6 +262,9 @@ function settingsPage(session: SessionView): void {
         h("section", {}, h("h2", {}, "登入狀態"), h("p", {}, "連續 6 小時無操作或登入滿 12 小時後過期。"), devices,
           h("button", { type: "button", textContent: "登出其他裝置",
             onclick: () => void perform(async () => { await api("/api/auth/sessions/revoke-others", "POST"); await reload(); show("其他裝置已登出。"); }) }))),
+      h("section", {}, h("h2", {}, "本週用量"), ownUsage),
+      admin && h("section", {}, h("h2", {}, "用量統計（最近 4 週）"), usageNote,
+        h("div", { className: "account-table" }, h("table", {}, h("thead", {}, usageHead), usageRows))),
       admin && h("section", {}, h("h2", {}, "邀請成員"),
         h("p", {}, "沒有公開註冊。建立後會產生一次性連結，由你私下交給同事設定密碼。"), inviteForm),
       admin && h("section", {}, h("h2", {}, "機構帳號"), table(["成員", "狀態", "角色", "操作"], users)),

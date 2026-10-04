@@ -158,6 +158,9 @@ def test_confirmation_is_bound_to_current_task_revision(local, monkeypatch):
     assert client.post(f"/api/workflows/{job.job_id}/confirm", json=body).status_code == 409
     body["revision"] = current["revision"]
     assert client.post(f"/api/workflows/{job.job_id}/confirm", json=body).status_code == 200
+    # The continuation message after a confirmation is exempt from weekly caps.
+    credits = client.app.state.accounts._all("SELECT count FROM continuation_credits")
+    assert [row["count"] for row in credits] == [1]
     confirmations.require(
         tool=tool,
         job_id=job.job_id,
