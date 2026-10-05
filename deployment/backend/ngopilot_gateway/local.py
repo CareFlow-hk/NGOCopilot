@@ -69,7 +69,15 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
     from urllib.parse import urlsplit
 
     parsed = urlsplit(settings.public_api_url)
-    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+    https_deployment = os.getenv("NGOPILOT_HTTPS_DEPLOYMENT") == "true"
+    if parsed.username or parsed.password or parsed.path not in {"", "/"}:
+        raise ValueError("PUBLIC_API_URL must be a bare origin")
+    if https_deployment:
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ValueError("VPS deployment requires an HTTPS public origin")
+        if os.getenv("NGOPILOT_SCHEDULER_URL"):
+            raise ValueError("Shared Scheduler must not be exposed in multi-account VPS mode")
+    elif parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
         raise ValueError("The local launcher must be published on HTTP loopback only")
     frontend = frontend or Path(os.environ.get("NGOPILOT_FRONTEND_DIR", "/opt/ngopilot/frontend"))
     manager = TenantProcessManager(settings)
@@ -115,9 +123,10 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         return JSONResponse({"detail": str(error)}, status_code=error.status, headers=headers)
 
     def set_cookie(response: Response, token: str, max_age: int = SESSION_ABSOLUTE_SECONDS):
-        # Plain HTTP is accepted only because create_local_app requires loopback.
+        # Public deployments require HTTPS; plain HTTP is restricted to loopback.
         response.set_cookie(
-            SESSION_COOKIE, token, max_age=max_age, path="/", httponly=True, samesite="strict"
+            SESSION_COOKIE, token, max_age=max_age, path="/", httponly=True,
+            samesite="strict", secure=https_deployment
         )
 
     async def json_body(request: Request) -> dict:
@@ -161,6 +170,8 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         ):
             # The card then sends one continuation message; it must not be capped.
             usage.grant_continuation(request.state.session.user_id)
+        if https_deployment:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -305,7 +316,7 @@ def create_local_app(settings: Settings | None = None, frontend: Path | None = N
         value = secrets.token_urlsafe(32)
         tickets[value] = (now + 60, current(request))
         return {
-            "url": settings.public_api_url.replace("http://", "ws://", 1) + "/acp?ticket=" + value
+            "url": settings.websocket_ticket_url(value)
         }
 
     @app.post("/api/uploads", status_code=201)

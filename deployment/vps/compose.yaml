@@ -1,0 +1,29 @@
+name: ngopilot
+services:
+  pilot:
+    image: ${NGOPILOT_IMAGE:?Set the versioned NGOPilot image}
+    container_name: ngopilot-vps
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8310:8310"
+    environment:
+      PORT: "8310"
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?Set an HTTPS origin}
+      NGOPILOT_HTTPS_DEPLOYMENT: "true"
+      MAX_UPLOAD_BYTES: "104857600"
+      NGOPILOT_PROCESS_IDLE_SECONDS: "120"
+      NGOPILOT_WEEKLY_MESSAGE_LIMIT: "500"
+      NGOPILOT_WEEKLY_IMAGE_LIMIT: "200"
+    volumes:
+      - /opt/ngopilot/data:/data
+      - /opt/ngopilot-secrets/foundry.env:/run/ngopilot-provider.env:ro
+    mem_limit: 1536m
+    cpus: 1.5
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

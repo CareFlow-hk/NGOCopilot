@@ -72,3 +72,11 @@
 - Gateway：`deployment/backend/tests` 全部通過，其中 `test_local_accounts.py` 13 項覆蓋無公開註冊、一次性連結、Origin/JSON、成員不能管理、工作區及下載隔離、改密／停用撤銷 session、最後管理員保護、重設連結覆蓋舊連結、審計無密碼、限流、過期、資料庫版本。
 - 前端 typecheck、Vitest、production build 通過。
 - 真實容器（臨時資料目錄，8320）+ 瀏覽器：bootstrap 連結 → 設定密碼 → 登入 → 帳號選單 → 邀請成員 → 一次性連結 → 成員登入，成員看不到管理區、管理 API 403、工作區 ID 不同、ACP `initialize` 成功 → 登出回到登入頁；375px 寬無橫向捲動。只用合成帳號，測試容器已移除。
+
+## VPS 部署（2026-10-04）
+
+使用者已明確決定此次不接 GCS，沿用 VPS 持久資料卷。這是本次部署對原倉庫 GCS 規定的例外。
+
+`NGOPILOT_HTTPS_DEPLOYMENT=true` 啟用 HTTPS 網域、Secure Cookie 和 WSS，仍保留完整 Host/Origin 檢查、邀請制帳號與帳號工作區隔離。容器只映射主機 loopback，由既有 HTTPS Tunnel 接入。不可把本機共用 Scheduler 接入此模式；須先完成其帳號隔離。
+
+部署配置在 `deployment/vps/compose.yaml`，資料在 `/opt/ngopilot/data`，Foundry 設定在 `/opt/ngopilot-secrets/foundry.env`。`deployment/vps/backup.sh` 僅短暫停止 Pilot 並建立包含帳號、對話、文件和設定的私有備份，隨後自動啟動；不刪除舊備份。備份包含秘密，僅限管理員讀取。
